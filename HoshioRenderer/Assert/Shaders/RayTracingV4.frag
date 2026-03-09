@@ -19,7 +19,7 @@ struct Triangle{
     ivec4 MaterialSlot;
 };
 
-struct BSDFMaterial{
+struct BRDFMaterial{
 	vec4 Emissive;  
 	vec4 BaseColor;
     vec4 Param1;
@@ -40,7 +40,7 @@ layout(std430, binding = 0) buffer TriangleSSBO {
 };
 
 layout(std430, binding = 1) buffer BRDFMaterialSSBO{
-    BSDFMaterial Materials[];
+    BRDFMaterial Materials[];
 };
 
 layout(std430, binding = 2) buffer LBVHNodeSSBO{
@@ -240,7 +240,7 @@ void main()
     if(hit_result.bIsHit)
     {
         uint material_slot = hit_result.MaterialSlot;
-        BSDFMaterial material = Materials[material_slot];
+        BRDFMaterial material = Materials[material_slot];
         FragColor = material.BaseColor;
     }else{
         FragColor = vec4(0.0, 0.0, 0.0, 1.0);

@@ -14,7 +14,7 @@ public:
 	float RefractRoughness = 0.0f;
 };
 
-struct KH_BSDFMaterial {
+struct KH_BRDFMaterial {
 	glm::vec3 Emissive = glm::vec3(0, 0, 0);  // 作为光源时的发光颜色
 	glm::vec3 BaseColor = glm::vec3(1, 1, 1);
 	float Subsurface = 0.0;

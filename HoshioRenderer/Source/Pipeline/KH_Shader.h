@@ -8,9 +8,11 @@ public:
 
     KH_Shader() = default;
     KH_Shader(const char* vertexPath, const char* fragmentPath);
+    KH_Shader(const char* computePath);
     ~KH_Shader();
 
     void Create(const char* vertexPath, const char* fragmentPath);
+    void Create(const char* computePath);
     void Use() const;
 
     void SetInt(const std::string& name, int value) const;

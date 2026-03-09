@@ -1,0 +1,55 @@
+#version 430
+
+layout (local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 2) buffer DataBuffer { ivec4 InData[]; };
+layout(std430, binding = 3) buffer ScanBuffer { ivec4 LocalScan[]; };
+layout(std430, binding = 4) buffer BlockSumBuffer { ivec4 BlockSum[]; };
+
+uniform int u_elementCount;
+
+const int THREAD_COUNT = 128;
+const int BLOCK_SIZE = 256;
+
+shared ivec4 s_digitTotal; 
+shared ivec4 s_data[BLOCK_SIZE]; 
+
+void main(){
+    uint threadId = gl_LocalInvocationID.x;
+    uint groupId = gl_WorkGroupID.x;
+    
+    uint offset = groupId * BLOCK_SIZE;
+    uint idx1 = offset + threadId;
+    uint idx2 = offset + threadId + THREAD_COUNT;
+
+    s_data[threadId]                = (idx1 < u_elementCount) ? InData[idx1] : ivec4(0);
+    s_data[threadId + THREAD_COUNT] = (idx2 < u_elementCount) ? InData[idx2] : ivec4(0);
+    barrier();
+
+    for (int stride = 1; stride < BLOCK_SIZE; stride <<= 1) {
+        int index = (int(threadId) + 1) * stride * 2 - 1;
+        if (index < BLOCK_SIZE) {
+            s_data[index] += s_data[index - stride];
+        }
+        barrier();
+    }
+
+    if (threadId == 0) {
+        BlockSum[groupId] = s_data[BLOCK_SIZE - 1];
+        s_data[BLOCK_SIZE - 1] = ivec4(0); 
+    }
+    barrier();
+
+    for (int stride = BLOCK_SIZE / 2; stride > 0; stride >>= 1) {
+        int index = (int(threadId) + 1) * stride * 2 - 1;
+        if (index < BLOCK_SIZE) {
+            ivec4 temp = s_data[index - stride];
+            s_data[index - stride] = s_data[index];
+            s_data[index] += temp;
+        }
+        barrier();
+    }
+
+    if (idx1 < u_elementCount) LocalScan[idx1] = s_data[threadId];
+    if (idx2 < u_elementCount) LocalScan[idx2] = s_data[threadId + THREAD_COUNT];
+}

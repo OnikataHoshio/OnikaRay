@@ -1,13 +1,34 @@
 #include "Editor/KH_Editor.h"
-#include "Pipeline/KH_Shader.h"
-#include "Scene/KH_Object.h"
-#include "Hit/KH_BVH.h"
-#include "Renderer/KH_Renderer.h"
-#include "Scene/KH_Scene.h"
-#include "Utils/KH_DebugUtils.h"
+//#include "Pipeline/KH_Shader.h"
+//#include "Scene/KH_Object.h"
+//#include "Hit/KH_BVH.h"
+//#include "Renderer/KH_Renderer.h"
+//#include "Scene/KH_Scene.h"
+//#include "Utils/KH_DebugUtils.h"
 
-#include "Scene/KH_Scene.h"
+#include "Utils/KH_GPUAlgorithms.h"
 
+int main()
+{
+	KH_Editor::EditorWidth = 1280;
+	KH_Editor::EditorHeight = 920;
+	KH_Editor::Title = "KH_Renderer";
+	KH_Editor::Instance();
+
+	std::vector<int> Data(6400000, 0);
+
+	for (int i = 0; i < 6400000; i++)
+		Data[i] = 6400000 - i;
+
+	KH_RadixSort RadixSort;
+
+	RadixSort.RunRadixSort(Data.data(), Data.size());
+
+	return 0;
+}
+
+
+/*
 int main()
 {
 	KH_Editor::EditorWidth = 1280;
@@ -46,3 +67,4 @@ int main()
 
 	return 0;
 }
+*/

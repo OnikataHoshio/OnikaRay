@@ -2,7 +2,6 @@
 #include "KH_Editor.h"
 #include "Utils/KH_DebugUtils.h"
 
-
 KH_Canvas::KH_Canvas()
     :Timer(3.0f)
 {

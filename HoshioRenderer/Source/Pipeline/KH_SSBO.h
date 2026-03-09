@@ -6,10 +6,16 @@ template <typename T>
 class KH_SSBO {
 public:
     KH_SSBO(unsigned int bindPoint = 0) : BindPoint(bindPoint), ID(0), Size(0) {}
+    KH_SSBO(KH_SSBO&& other) noexcept : ID(other.ID), BindPoint(other.BindPoint), Size(other.Size) {
+        other.ID = 0;
+        other.Size = 0;
+    }
 
     ~KH_SSBO() {
         if (ID != 0) glDeleteBuffers(1, &ID);
     }
+    KH_SSBO(const KH_SSBO&) = delete;
+    KH_SSBO& operator=(const KH_SSBO&) = delete;
 
     void SetData(const std::vector<T>& data, GLenum usage = GL_STATIC_DRAW) {
         UpdateBuffer(data.data(), data.size(), usage);
@@ -19,9 +25,22 @@ public:
         UpdateBuffer(data, count, usage);
     }
 
-    void SetBindPoint(unsigned int bindPoint)
+    void GetData(std::vector<T>& outData) const {
+        outData.resize(Size);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, ID);
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, Size * sizeof(T), outData.data());
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    }
+
+    void SetBindPoint(unsigned int BindPoint)
     {
-        BindPoint = bindPoint;
+        this->BindPoint = BindPoint;
+    }
+
+    void Bind(unsigned int BindPoint) 
+    {
+        SetBindPoint(BindPoint);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BindPoint, ID);
     }
 
     void Bind() const {
@@ -58,3 +77,4 @@ private:
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 };
+

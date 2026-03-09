@@ -6,6 +6,11 @@ KH_Shader::KH_Shader(const char* vertexPath, const char* fragmentPath)
     Create(vertexPath, fragmentPath);
 }
 
+KH_Shader::KH_Shader(const char* computePath)
+{
+    Create(computePath);
+}
+
 KH_Shader::~KH_Shader()
 {
     glDeleteProgram(ID);
@@ -65,6 +70,42 @@ void KH_Shader::Create(const char* vertexPath, const char* fragmentPath)
 
     glDeleteShader(vertex);
     glDeleteShader(fragment);
+}
+
+void KH_Shader::Create(const char* computePath)
+{
+    if (ID != 0)
+        return;
+
+    std::string computeCode;
+    std::ifstream cShaderFile;
+
+    cShaderFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+
+    try {
+        cShaderFile.open(computePath);
+        std::stringstream cShaderStream;
+        cShaderStream << cShaderFile.rdbuf();
+        cShaderFile.close();
+        computeCode = cShaderStream.str();
+    }
+    catch (std::ifstream::failure& e) {
+        std::cerr << "ERROR::COMPUTE_SHADER::FILE_NOT_SUCCESFULLY_READ: " << e.what() << std::endl;
+    }
+
+    const char* cShaderCode = computeCode.c_str();
+
+    unsigned int compute = glCreateShader(GL_COMPUTE_SHADER);
+    glShaderSource(compute, 1, &cShaderCode, NULL);
+    glCompileShader(compute);
+    CheckCompileErrors(compute, "COMPUTE");
+
+    ID = glCreateProgram();
+    glAttachShader(ID, compute);
+    glLinkProgram(ID);
+    CheckCompileErrors(ID, "PROGRAM");
+
+    glDeleteShader(compute);
 }
 
 void KH_Shader::Use() const

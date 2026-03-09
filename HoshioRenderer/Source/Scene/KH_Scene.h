@@ -11,7 +11,7 @@ struct KH_TriangleEncoded
 	glm::ivec4 MaterialSlot;
 };
 
-struct KH_BSDFMaterialEncoded
+struct KH_BRDFMaterialEncoded
 {
 	glm::vec4 Emissive;
 	glm::vec4 BaseColor;
@@ -35,7 +35,7 @@ private:
 	void SetSSBOs();
 
 	KH_SSBO<KH_TriangleEncoded> Triangle_SSBO;
-	KH_SSBO<KH_BSDFMaterialEncoded> Material_SSBO;
+	KH_SSBO<KH_BRDFMaterialEncoded> Material_SSBO;
 	KH_SSBO<KH_LBVHNodeEncoded> LBVHNode_SSBO;
 
 	void SetRayTracingParam() const;
@@ -47,7 +47,7 @@ public:
 
 	std::vector<KH_Model> Models;
 	std::vector<KH_Triangle> Triangles;
-	std::vector<KH_BSDFMaterial> Materials;
+	std::vector<KH_BRDFMaterial> Materials;
 
 	KH_LBVH BVH;
 	//KH_BVH BVH;
@@ -60,7 +60,7 @@ public:
 
 	std::vector<KH_TriangleEncoded> EncodeTriangles();
 
-	std::vector<KH_BSDFMaterialEncoded> EncodeBSDFMaterials();
+	std::vector<KH_BRDFMaterialEncoded> EncodeBSDFMaterials();
 
 	std::vector<KH_LBVHNodeEncoded> EncodeLBVHNodes();
 

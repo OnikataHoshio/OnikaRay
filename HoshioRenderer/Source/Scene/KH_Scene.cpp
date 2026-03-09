@@ -8,7 +8,7 @@
 void KH_Scene::SetSSBOs()
 {
 	static std::vector<KH_TriangleEncoded> TriangleEncodeds;
-	static std::vector<KH_BSDFMaterialEncoded> BSDFMaterialEncodeds;
+	static std::vector<KH_BRDFMaterialEncoded> BSDFMaterialEncodeds;
 	static std::vector<KH_LBVHNodeEncoded> LBVHNodeEncodeds;
 
 	TriangleEncodeds.clear();
@@ -21,7 +21,7 @@ void KH_Scene::SetSSBOs()
 
 	std::string DebugMessage = std::format("KH_TriangleEncoded size : {} Byte", sizeof(KH_TriangleEncoded));
 	LOG_D(DebugMessage);
-	DebugMessage = std::format("KH_BSDFMaterialEncoded size : {} Byte", sizeof(KH_BSDFMaterialEncoded));
+	DebugMessage = std::format("KH_BSDFMaterialEncoded size : {} Byte", sizeof(KH_BRDFMaterialEncoded));
 	LOG_D(DebugMessage);
 	DebugMessage = std::format("KH_LBVHNodeEcoded size : {} Byte", sizeof(KH_LBVHNodeEncoded));
 	LOG_D(DebugMessage);
@@ -174,14 +174,14 @@ std::vector<KH_TriangleEncoded> KH_Scene::EncodeTriangles()
 	return TriangleEncodeds;
 }
 
-std::vector<KH_BSDFMaterialEncoded> KH_Scene::EncodeBSDFMaterials()
+std::vector<KH_BRDFMaterialEncoded> KH_Scene::EncodeBSDFMaterials()
 {
 	const int nMaterials = Materials.size();
-	std::vector<KH_BSDFMaterialEncoded> BSDFMaterialEncodeds(nMaterials);
+	std::vector<KH_BRDFMaterialEncoded> BSDFMaterialEncodeds(nMaterials);
 
 	for (int i = 0; i < nMaterials; i++)
 	{
-		KH_BSDFMaterial& Mat = Materials[i];
+		KH_BRDFMaterial& Mat = Materials[i];
 
 		BSDFMaterialEncodeds[i].Emissive = glm::vec4(Mat.Emissive, 1.0);
 		BSDFMaterialEncodeds[i].BaseColor = glm::vec4(Mat.BaseColor, 1.0);
@@ -254,10 +254,10 @@ void KH_ExampleScenes::InitExampleScene1()
 
 	ExampleScene1.BVH.BuildMode = KH_BVH_BUILD_MODE::SAH;
 
-	KH_BSDFMaterial Material1;
+	KH_BRDFMaterial Material1;
 	Material1.BaseColor = glm::vec3(1.0, 0.0, 0.0);
 
-	KH_BSDFMaterial Material2;
+	KH_BRDFMaterial Material2;
 	Material2.BaseColor = glm::vec3(0.0, 1.0, 0.0);
 
 	glm::vec3 v0(-1.0f, 0.15f, -1.0f);
@@ -284,7 +284,7 @@ void KH_ExampleScenes::InitSingleTriangle()
 
 	SingleTriangle.BVH.BuildMode = KH_BVH_BUILD_MODE::SAH;
 
-	KH_BSDFMaterial Material;
+	KH_BRDFMaterial Material;
 	Material.BaseColor = glm::vec3(1.0, 0.0, 0.0);
 
 	SingleTriangle.Materials.push_back(Material);

@@ -19,6 +19,7 @@
 
 #include <sstream>
 #include <filesystem>
+#include <iomanip>
 
 // ================= OpenGL / Window =================
 #include <glad/glad.h>
@@ -38,6 +39,8 @@
 
 // ================= 辅助库 ==================
 #include "tiny_obj_loader/tiny_obj_loader.h"
+
+#include "magic_enum/magic_enum.hpp"
 
 // ================= Macro ==================
 #define EPS 1e-6
