@@ -2,17 +2,17 @@
 #include "Pipeline/KH_Shader.h"
 #include "Scene/KH_Scene.h"
 #include "Pipeline/RenderGraph/KH_PostProcessGraph.h"
+#include "Utils/KH_Algorithms.h"
 
 int main()
 {
-	KH_Editor::SetEditorWidth(1280);
+	KH_Editor::SetEditorWidth(1480);
 	KH_Editor::SetEditorHeight(920);
 	KH_Editor::SetTitle("KH_Renderer");
+	KH_Editor::SetDefaultScenePath("Assert/Scenes/Bunny.xml");
 	KH_Editor::Instance();
 
 	KH_Model& Bunny = KH_DefaultModels::Instance().Bunny;
-	KH_GpuLBVHScene& GpuLBVHBunnyScene = KH_GpuLBVHExampleScenes::Instance().Bunny;
-	KH_GpuLBVHScene& GpuLBVHDebugBoxScene = KH_GpuLBVHExampleScenes::Instance().DebugBox;
 	KH_Shader& TestShader = KH_ExampleShaders::Instance().TestShader;
 	KH_Shader& AABBShader = KH_ExampleShaders::Instance().AABBShader;
 
@@ -20,23 +20,25 @@ int main()
 	glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
+	KH_Editor& Editor = KH_Editor::Instance();
+
 	while (!glfwWindowShouldClose(KH_Editor::Instance().GLFWwindow()))
 	{
-		KH_Editor::Instance().BeginRender();
+		Editor.BeginRender();
 
-		KH_Editor::Instance().BindCanvasFramebuffer();
+		Editor.BindCanvasFramebuffer();
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		//Bunny.Render(TestShader);
 
 		//GpuLBVHDebugBoxScene.Render();
-		GpuLBVHBunnyScene.Render();
+		Editor.Render();
 
-		KH_Editor::Instance().UnbindCanvasFramebuffer();
+		Editor.UnbindCanvasFramebuffer();
 
 		KH_PostProcessHelper::Instance().SingleGammaCorrectionGraph.Execute();
 
-		KH_Editor::Instance().EndRender();
+		Editor.EndRender();
 	}
 
 	return 0;

@@ -1,5 +1,6 @@
 #include "KH_SceneXmlSerializer.h"
 #include "KH_Scene.h"
+
 namespace
 {
     using namespace tinyxml2;
@@ -8,6 +9,13 @@ namespace
     {
         std::ostringstream oss;
         oss << std::setprecision(9) << v.x << " " << v.y << " " << v.z;
+        return oss.str();
+    }
+
+    std::string Vec2ToString(const glm::vec2& v)
+    {
+        std::ostringstream oss;
+        oss << std::setprecision(9) << v.x << " " << v.y;
         return oss.str();
     }
 
@@ -21,16 +29,86 @@ namespace
         return !iss.fail();
     }
 
-    void WriteTransform(XMLDocument& doc, XMLElement* parent, const KH_Object& obj)
+    bool StringToVec2(const char* text, glm::vec2& outValue)
+    {
+        if (text == nullptr)
+            return false;
+
+        std::istringstream iss(text);
+        iss >> outValue.x >> outValue.y;
+        return !iss.fail();
+    }
+
+    std::string UIntsToString(const std::vector<unsigned int>& values)
+    {
+        std::ostringstream oss;
+        for (size_t i = 0; i < values.size(); ++i)
+        {
+            if (i > 0)
+                oss << ' ';
+            oss << values[i];
+        }
+        return oss.str();
+    }
+
+    bool StringToUInts(const char* text, std::vector<unsigned int>& outValues)
+    {
+        outValues.clear();
+        if (text == nullptr)
+            return false;
+
+        std::istringstream iss(text);
+        unsigned int v = 0;
+        while (iss >> v)
+            outValues.push_back(v);
+
+        return !outValues.empty();
+    }
+
+    std::string DrawModeToString(GLenum drawMode)
+    {
+        switch (drawMode)
+        {
+        case GL_LINES:     return "Lines";
+        case GL_TRIANGLES: return "Triangles";
+        default:           return "Triangles";
+        }
+    }
+
+    GLenum StringToDrawMode(const char* text)
+    {
+        if (text == nullptr)
+            return GL_TRIANGLES;
+
+        if (std::strcmp(text, "Lines") == 0)
+            return GL_LINES;
+
+        return GL_TRIANGLES;
+    }
+
+    bool StringToBuiltinType(const char* text, KH_BuiltinModelType& outType)
+    {
+        if (text == nullptr)
+            return false;
+
+        auto result = magic_enum::enum_cast<KH_BuiltinModelType>(text);
+        if (!result.has_value())
+            return false;
+
+        outType = result.value();
+        return true;
+    }
+
+    void WriteTransform(XMLDocument& doc, XMLElement* parent, const KH_Model& model)
     {
         XMLElement* transformElem = doc.NewElement("Transform");
-        transformElem->SetAttribute("position", Vec3ToString(obj.GetPosition()).c_str());
-        transformElem->SetAttribute("rotation", Vec3ToString(obj.GetRotation()).c_str());
-        transformElem->SetAttribute("scale", Vec3ToString(obj.GetScale()).c_str());
+        transformElem->SetAttribute("position", Vec3ToString(model.GetPosition()).c_str());
+        transformElem->SetAttribute("rotation", Vec3ToString(model.GetRotation()).c_str());
+        transformElem->SetAttribute("scale", Vec3ToString(model.GetScale()).c_str());
         parent->InsertEndChild(transformElem);
     }
 
-    void ReadTransform(const XMLElement* transformElem, KH_Object& obj)
+    void ReadTransform(const XMLElement* transformElem, KH_Model& model)
     {
         if (transformElem == nullptr)
             return;
@@ -40,13 +118,13 @@ namespace
         glm::vec3 scale(1.0f);
 
         if (StringToVec3(transformElem->Attribute("position"), position))
-            obj.SetPosition(position);
+            model.SetPosition(position);
 
         if (StringToVec3(transformElem->Attribute("rotation"), rotation))
-            obj.SetRotation(rotation);
+            model.SetRotation(rotation);
 
         if (StringToVec3(transformElem->Attribute("scale"), scale))
-            obj.SetScale(scale);
+            model.SetScale(scale);
     }
 
     void WriteMaterial(XMLDocument& doc, XMLElement* materialsElem, const KH_BRDFMaterial& mat, int id)
@@ -106,60 +184,164 @@ namespace
         return mat;
     }
 
-    void WriteTriangle(XMLDocument& doc, XMLElement* objectsElem, const KH_Triangle& tri, int materialSlotID)
+    void WriteMeshMaterialSlots(XMLDocument& doc, XMLElement* modelElem, KH_Model& model)
     {
-        XMLElement* triangleElem = doc.NewElement("Triangle");
-        triangleElem->SetAttribute("material", materialSlotID);
+        XMLElement* slotsElem = doc.NewElement("MeshMaterialSlots");
 
-        WriteTransform(doc, triangleElem, tri);
+        const auto& meshes = model.GetMeshes();
+        for (int meshID = 0; meshID < static_cast<int>(meshes.size()); ++meshID)
+        {
+            XMLElement* slotElem = doc.NewElement("MeshMaterialSlot");
+            slotElem->SetAttribute("meshID", meshID);
+            slotElem->SetAttribute("material", meshes[meshID].GetMaterialSlotID());
+            slotsElem->InsertEndChild(slotElem);
+        }
 
-        XMLElement* geometryElem = doc.NewElement("Geometry");
-        geometryElem->SetAttribute("p1", Vec3ToString(tri.P1).c_str());
-        geometryElem->SetAttribute("p2", Vec3ToString(tri.P2).c_str());
-        geometryElem->SetAttribute("p3", Vec3ToString(tri.P3).c_str());
-        geometryElem->SetAttribute("n1", Vec3ToString(tri.N1).c_str());
-        geometryElem->SetAttribute("n2", Vec3ToString(tri.N2).c_str());
-        geometryElem->SetAttribute("n3", Vec3ToString(tri.N3).c_str());
-
-        triangleElem->InsertEndChild(geometryElem);
-        objectsElem->InsertEndChild(triangleElem);
+        modelElem->InsertEndChild(slotsElem);
     }
 
-    bool ReadTriangle(const XMLElement* triangleElem, KH_SceneBase& scene)
+    void ReadMeshMaterialSlots(const XMLElement* modelElem, KH_Model& model)
     {
-        if (triangleElem == nullptr)
+        const XMLElement* slotsElem = modelElem->FirstChildElement("MeshMaterialSlots");
+        if (slotsElem == nullptr)
+            return;
+
+        for (const XMLElement* slotElem = slotsElem->FirstChildElement("MeshMaterialSlot");
+            slotElem != nullptr;
+            slotElem = slotElem->NextSiblingElement("MeshMaterialSlot"))
+        {
+            const int meshID = slotElem->IntAttribute("meshID", -1);
+            const int materialSlotID = slotElem->IntAttribute("material", KH_MATERIAL_UNDEFINED_SLOT);
+            model.SetMeshMaterialSlotID(materialSlotID, meshID);
+        }
+    }
+
+    void WriteInlineMeshes(XMLDocument& doc, XMLElement* modelElem, KH_Model& model)
+    {
+        XMLElement* meshesElem = doc.NewElement("Meshes");
+
+        for (const KH_Mesh& mesh : model.GetMeshes())
+        {
+            XMLElement* meshElem = doc.NewElement("Mesh");
+            meshElem->SetAttribute("drawMode", DrawModeToString(mesh.GetDrawMode()).c_str());
+
+            XMLElement* verticesElem = doc.NewElement("Vertices");
+            for (const KH_Vertex& v : mesh.GetVertices())
+            {
+                XMLElement* vertexElem = doc.NewElement("Vertex");
+                vertexElem->SetAttribute("position", Vec3ToString(v.Position).c_str());
+                vertexElem->SetAttribute("normal", Vec3ToString(v.Normal).c_str());
+                vertexElem->SetAttribute("tangent", Vec3ToString(v.Tangent).c_str());
+                vertexElem->SetAttribute("bitangent", Vec3ToString(v.Bitangent).c_str());
+                vertexElem->SetAttribute("uv", Vec2ToString(v.UV).c_str());
+                verticesElem->InsertEndChild(vertexElem);
+            }
+
+            XMLElement* indicesElem = doc.NewElement("Indices");
+            indicesElem->SetText(UIntsToString(mesh.GetIndices()).c_str());
+
+            meshElem->InsertEndChild(verticesElem);
+            meshElem->InsertEndChild(indicesElem);
+            meshesElem->InsertEndChild(meshElem);
+        }
+
+        modelElem->InsertEndChild(meshesElem);
+    }
+
+    bool ReadInlineMeshes(const XMLElement* modelElem, KH_Model& model)
+    {
+        const XMLElement* meshesElem = modelElem->FirstChildElement("Meshes");
+        if (meshesElem == nullptr)
             return false;
 
-        const XMLElement* geometryElem = triangleElem->FirstChildElement("Geometry");
-        if (geometryElem == nullptr)
+        bool hasAnyMesh = false;
+
+        for (const XMLElement* meshElem = meshesElem->FirstChildElement("Mesh");
+            meshElem != nullptr;
+            meshElem = meshElem->NextSiblingElement("Mesh"))
+        {
+            std::vector<KH_Vertex> vertices;
+            std::vector<unsigned int> indices;
+            std::vector<KH_Texture> textures;
+
+            const GLenum drawMode = StringToDrawMode(meshElem->Attribute("drawMode"));
+
+            const XMLElement* verticesElem = meshElem->FirstChildElement("Vertices");
+            if (verticesElem == nullptr)
+                return false;
+
+            for (const XMLElement* vertexElem = verticesElem->FirstChildElement("Vertex");
+                vertexElem != nullptr;
+                vertexElem = vertexElem->NextSiblingElement("Vertex"))
+            {
+                KH_Vertex v{};
+                if (!StringToVec3(vertexElem->Attribute("position"), v.Position))
+                    return false;
+
+                StringToVec3(vertexElem->Attribute("normal"), v.Normal);
+                StringToVec3(vertexElem->Attribute("tangent"), v.Tangent);
+                StringToVec3(vertexElem->Attribute("bitangent"), v.Bitangent);
+                StringToVec2(vertexElem->Attribute("uv"), v.UV);
+
+                vertices.push_back(v);
+            }
+
+            const XMLElement* indicesElem = meshElem->FirstChildElement("Indices");
+            if (indicesElem == nullptr || !StringToUInts(indicesElem->GetText(), indices))
+                return false;
+
+            KH_Mesh mesh(vertices, indices, textures, drawMode);
+            model.AddMesh(std::move(mesh));
+            hasAnyMesh = true;
+        }
+
+        if (hasAnyMesh)
+            model.SetSourceAsInline();
+
+        return hasAnyMesh;
+    }
+
+    bool BuildBuiltinModelFromXml(const XMLElement* modelElem, KH_Model& outModel)
+    {
+        KH_BuiltinModelType builtinType = KH_BuiltinModelType::None;
+        if (!StringToBuiltinType(modelElem->Attribute("builtinType"), builtinType))
             return false;
 
-        glm::vec3 p1(0.0f), p2(0.0f), p3(0.0f);
-        glm::vec3 n1(0.0f, 0.0f, 1.0f), n2(0.0f, 0.0f, 1.0f), n3(0.0f, 0.0f, 1.0f);
-
-        if (!StringToVec3(geometryElem->Attribute("p1"), p1)) return false;
-        if (!StringToVec3(geometryElem->Attribute("p2"), p2)) return false;
-        if (!StringToVec3(geometryElem->Attribute("p3"), p3)) return false;
-
-        StringToVec3(geometryElem->Attribute("n1"), n1);
-        StringToVec3(geometryElem->Attribute("n2"), n2);
-        StringToVec3(geometryElem->Attribute("n3"), n3);
-
-        int materialSlotID = triangleElem->IntAttribute("material", KH_MATERIAL_UNDEFINED_SLOT);
-
-        KH_Triangle tri(p1, p2, p3, n1, n2, n3);
-        KH_Triangle& triRef = scene.AddTriangle(materialSlotID, tri);
-
-        ReadTransform(triangleElem->FirstChildElement("Transform"), triRef);
+        float size = modelElem->FloatAttribute("size", 1.0f);
+        outModel = KH_Model::CreateBuiltin(builtinType, size);
         return true;
     }
 
-    void WriteModel(XMLDocument& doc, XMLElement* objectsElem, const KH_Model& model, int materialSlotID)
+    void WriteModel(XMLDocument& doc, XMLElement* objectsElem, KH_Model& model)
     {
         XMLElement* modelElem = doc.NewElement("Model");
-        modelElem->SetAttribute("material", materialSlotID);
-        modelElem->SetAttribute("path", model.GetSourcePath().c_str());
 
+        switch (model.GetSourceType())
+        {
+        case KH_ModelSourceType::Asset:
+            modelElem->SetAttribute("sourceType", "Asset");
+            modelElem->SetAttribute("path", model.GetSourcePath().c_str());
+            break;
+
+        case KH_ModelSourceType::Builtin:
+            modelElem->SetAttribute("sourceType", "Builtin");
+            modelElem->SetAttribute(
+                "builtinType",
+                std::string(magic_enum::enum_name(model.GetBuiltinType())).c_str()
+            );
+            modelElem->SetAttribute("size", model.GetBuiltinSize());
+            break;
+
+        case KH_ModelSourceType::Inline:
+            modelElem->SetAttribute("sourceType", "Inline");
+            WriteInlineMeshes(doc, modelElem, model);
+            break;
+
+        default:
+            return;
+        }
+
+        WriteMeshMaterialSlots(doc, modelElem, model);
         WriteTransform(doc, modelElem, model);
 
         objectsElem->InsertEndChild(modelElem);
@@ -170,14 +352,46 @@ namespace
         if (modelElem == nullptr)
             return false;
 
-        const char* path = modelElem->Attribute("path");
-        if (path == nullptr || path[0] == '\0')
+        const char* sourceType = modelElem->Attribute("sourceType");
+        if (sourceType == nullptr)
             return false;
 
-        int materialSlotID = modelElem->IntAttribute("material", KH_MATERIAL_UNDEFINED_SLOT);
+        KH_Model* createdModel = nullptr;
 
-        KH_Model& modelRef = scene.AddModel(materialSlotID, path);
-        ReadTransform(modelElem->FirstChildElement("Transform"), modelRef);
+        if (std::strcmp(sourceType, "Asset") == 0)
+        {
+            const char* path = modelElem->Attribute("path");
+            if (path == nullptr || path[0] == '\0')
+                return false;
+
+            KH_Model& modelRef = scene.AddModel(KH_MATERIAL_UNDEFINED_SLOT, path);
+            createdModel = &modelRef;
+        }
+        else if (std::strcmp(sourceType, "Builtin") == 0)
+        {
+            KH_Model model;
+            if (!BuildBuiltinModelFromXml(modelElem, model))
+                return false;
+
+            KH_Model& modelRef = scene.AddModel(KH_MATERIAL_UNDEFINED_SLOT, std::move(model));
+            createdModel = &modelRef;
+        }
+        else if (std::strcmp(sourceType, "Inline") == 0)
+        {
+            KH_Model model;
+            if (!ReadInlineMeshes(modelElem, model))
+                return false;
+
+            KH_Model& modelRef = scene.AddModel(KH_MATERIAL_UNDEFINED_SLOT, std::move(model));
+            createdModel = &modelRef;
+        }
+        else
+        {
+            return false;
+        }
+
+        ReadTransform(modelElem->FirstChildElement("Transform"), *createdModel);
+        ReadMeshMaterialSlots(modelElem, *createdModel);
 
         return true;
     }
@@ -198,20 +412,13 @@ namespace
         XMLElement* objectsElem = doc.NewElement("Objects");
         root->InsertEndChild(objectsElem);
 
-        for (const KH_SceneObject& sceneObject : scene.GetObjects())
+        for (const auto& sceneObject : scene.GetObjects())
         {
-            const KH_Object* object = sceneObject.Object.get();
-            if (object == nullptr)
+            KH_Model* model = dynamic_cast<KH_Model*>(sceneObject.get());
+            if (model == nullptr)
                 continue;
 
-            if (const KH_Model* model = dynamic_cast<const KH_Model*>(object))
-            {
-                WriteModel(doc, objectsElem, *model, sceneObject.MaterialSlotID);
-            }
-            else if (const KH_Triangle* tri = dynamic_cast<const KH_Triangle*>(object))
-            {
-                WriteTriangle(doc, objectsElem, *tri, sceneObject.MaterialSlotID);
-            }
+            WriteModel(doc, objectsElem, *model);
         }
     }
 
@@ -250,11 +457,6 @@ namespace
                 if (!ReadModel(objectElem, scene))
                     return false;
             }
-            else if (std::strcmp(name, "Triangle") == 0)
-            {
-                if (!ReadTriangle(objectElem, scene))
-                    return false;
-            }
         }
 
         return true;
@@ -271,7 +473,7 @@ namespace KH_SceneXmlSerializer
         doc.InsertFirstChild(decl);
 
         tinyxml2::XMLElement* root = doc.NewElement("Scene");
-        root->SetAttribute("version", 1);
+        root->SetAttribute("version", 3);
         doc.InsertEndChild(root);
 
         WriteMaterials(doc, root, scene);

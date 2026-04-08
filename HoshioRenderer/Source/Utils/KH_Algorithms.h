@@ -82,3 +82,32 @@ private:
 	static uint32_t ExpandBits(uint32_t v);
 };
 
+class KH_LowDiscrepancySequence
+{
+public:
+	static float IntegerRadicalInverse(int Base, int i);
+
+	static float RadicalInverse(int Base, int i);
+
+	static float Halton(int Dimension, int Index);
+
+	static float Hammersley(int Dimension, int Index, int NumSamples);
+
+private:
+	static int NthPrimeNumber(int Dimension);
+};
+
+class KH_Sobol
+{
+public:
+	static uint32_t GenerateM(uint32_t k, uint32_t S, std::vector<uint32_t>& A_component, std::vector<uint32_t>& M);
+
+	static uint32_t GrayCode(uint32_t i);
+
+	static float Sobol(std::vector<uint32_t>& V, uint32_t i);
+
+	static std::vector<float> GenerateSobols(uint32_t D, uint32_t S, uint32_t A, std::vector<uint32_t>& M);
+
+	static std::vector<uint32_t> GenerateDirectionNumbers(uint32_t D, uint32_t S, uint32_t A, std::vector<uint32_t>& M);
+
+};

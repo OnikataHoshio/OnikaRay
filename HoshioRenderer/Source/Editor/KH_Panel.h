@@ -47,3 +47,13 @@ public:
 
 	 void Render() override;
 };
+
+class KH_SceneTree : public KH_Panel
+{
+public:
+	KH_SceneTree() = default;
+	~KH_SceneTree() override = default;
+
+	void Render() override;
+};
+

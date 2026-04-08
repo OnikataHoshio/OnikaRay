@@ -1,4 +1,6 @@
 #include "KH_Mesh.h"
+
+#include "Editor/KH_Editor.h"
 #include "Pipeline/KH_Texture.h"
 #include "Pipeline/KH_Shader.h"
 
@@ -6,7 +8,7 @@
 
 KH_Mesh::KH_Mesh(std::vector<KH_Vertex>& Vertices, std::vector<unsigned int>& Indices, std::vector<KH_Texture>& Textures, GLenum DrawMode)
 {
-    Create(Vertices, Indices, Textures);
+    Create(Vertices, Indices, Textures,DrawMode);
 }
 
 KH_Mesh::KH_Mesh(KH_Mesh&& other) noexcept
@@ -122,7 +124,7 @@ uint32_t KH_Mesh::GetPrimitiveCount() const
 	}
 }
 
-void KH_Mesh::EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitives, int MaterialSlotID,
+void KH_Mesh::EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitives,
 	const glm::mat4& ModelMatrix, const glm::mat3& NormalMatrix) const
 {
     if (DrawMode != GL_TRIANGLES)
@@ -158,7 +160,7 @@ void KH_Mesh::EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitives, 
     }
 }
 
-void KH_Mesh::CollectPrimitives(std::vector<KH_ScenePrimitive>& outPrimitives, int MaterialSlotID,
+void KH_Mesh::CollectPrimitives(std::vector<KH_ScenePrimitive>& outPrimitives,
 	const glm::mat4& ModelMatrix, const glm::mat3& NormalMatrix) const
 {
     if (DrawMode != GL_TRIANGLES)
@@ -180,10 +182,10 @@ void KH_Mesh::CollectPrimitives(std::vector<KH_ScenePrimitive>& outPrimitives, i
 
         auto primitive = std::make_unique<KH_Triangle>(p0, p1, p2, n0, n1, n2);
         primitive->PrimitiveType = KH_PrimitiveType::Triangle;
+        primitive->MaterialSlotID = MaterialSlotID;
 
         outPrimitives.emplace_back(KH_ScenePrimitive{
-            std::move(primitive),
-            MaterialSlotID
+            std::move(primitive)
             });
     }
 }
@@ -216,6 +218,59 @@ const KH_AABB& KH_Mesh::GetLocalAABB() const
 {
     return LocalAABB;
 }
+
+const std::vector<KH_Vertex>& KH_Mesh::GetVertices() const
+{
+    return Vertices;
+}
+
+const std::vector<unsigned int>& KH_Mesh::GetIndices() const
+{
+    return Indices;
+}
+
+GLenum KH_Mesh::GetDrawMode() const
+{
+    return DrawMode;
+}
+
+int KH_Mesh::GetMaterialSlotID() const
+{
+    return MaterialSlotID;
+}
+
+void KH_Mesh::SetMaterialSlotID(int InMaterialSlotID)
+{
+    MaterialSlotID = InMaterialSlotID;
+}
+
+KH_PickResult KH_Mesh::Pick(const KH_Ray& Ray, const glm::mat4& ModelMatrix, const glm::mat3& NormalMatrix) const
+{
+    KH_PickResult best;
+
+    std::vector<KH_ScenePrimitive> primitives;
+    primitives.reserve(GetPrimitiveCount());
+    CollectPrimitives(primitives, ModelMatrix, NormalMatrix);
+
+    for (auto& primitive : primitives)
+    {
+        KH_Ray localRay = Ray;
+        KH_HitResult pick = primitive->Hit(localRay);
+
+        if (pick.bIsHit && pick.Distance < best.Distance)
+        {
+            best.bIsHit = true;
+            best.Distance = pick.Distance;
+            best.MaterialSlotID = MaterialSlotID;
+            best.ObjectMeshID = LocalMeshID;
+            best.HitPoint = pick.HitPoint;
+            best.Normal = pick.Normal;
+        }
+    }
+
+    return best;
+}
+
 
 
 void KH_Mesh::SetupMesh()

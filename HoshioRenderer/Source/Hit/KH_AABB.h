@@ -2,6 +2,8 @@
 
 #include "KH_Common.h"
 
+
+
 class KH_Ray;
 
 class KH_Triangle;

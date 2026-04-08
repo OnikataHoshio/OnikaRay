@@ -41,12 +41,12 @@ void KH_IBVH::CollectPrimitives(std::vector<KH_SceneObject>& Objects)
 	PrimitiveCount = 0;
 	for (auto& Object : Objects)
 	{
-		PrimitiveCount += Object.Object->GetPrimitiveCount();
+		PrimitiveCount += Object->GetPrimitiveCount();
 	}
 	Primitives.reserve(PrimitiveCount);
 	for (auto& Object : Objects)
 	{
-		Object.Object->CollectPrimitives(Primitives, Object.MaterialSlotID);
+		Object->CollectPrimitives(Primitives);
 	}
 }
 
@@ -78,19 +78,19 @@ KH_BVHSplitInfo KH_IBVHNode::SelectSplitModeSAH(std::vector<KH_ScenePrimitive>& 
 
 	for (int axis = 0; axis < 3; axis++)
 	{
-		auto comparator = (axis == 0) ? KH_ScenePrimitive::Cmpx : (axis == 1) ? KH_ScenePrimitive::Cmpy : KH_ScenePrimitive::Cmpz;
+		auto comparator = (axis == 0) ? KH_Primitive::CmpxPtr : (axis == 1) ? KH_Primitive::CmpyPtr : KH_Primitive::CmpzPtr;
 		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, comparator);
 
 		KH_AABB currentLeft;
 		for (int i = 0; i < count; ++i) {
-			currentLeft.Merge(Primitives[BeginIndex + i].Primitive->GetAABB());
+			currentLeft.Merge(Primitives[BeginIndex + i]->GetAABB());
 			leftAreas[i] = currentLeft.GetSurfaceArea();
 			leftBoxes[i] = currentLeft; // 可选：用于调试
 		}
 
 		KH_AABB currentRight;
 		for (int i = count - 1; i > 0; --i) {
-			currentRight.Merge(Primitives[BeginIndex + i].Primitive->GetAABB());
+			currentRight.Merge(Primitives[BeginIndex + i]->GetAABB());
 
 			float saLeft = leftAreas[i - 1];
 			float saRight = currentRight.GetSurfaceArea();
@@ -124,8 +124,8 @@ void KH_BVHNode::BuildNode(std::vector<KH_ScenePrimitive>& Primitives, uint32_t 
 	AABB.MaxPos = glm::vec3(-MaxInf);
 
 	for (int i = BeginIndex; i < EndIndex; i++) {
-		AABB.MinPos = glm::min(AABB.MinPos, Primitives[i].Primitive->GetAABB().MinPos);
-		AABB.MaxPos = glm::max(AABB.MaxPos, Primitives[i].Primitive->GetAABB().MaxPos);
+		AABB.MinPos = glm::min(AABB.MinPos, Primitives[i]->GetAABB().MinPos);
+		AABB.MaxPos = glm::max(AABB.MaxPos, Primitives[i]->GetAABB().MaxPos);
 	}
 
 	AABB.MinPos -= static_cast<float>(EPS);
@@ -144,13 +144,13 @@ void KH_BVHNode::BuildNode(std::vector<KH_ScenePrimitive>& Primitives, uint32_t 
 	KH_BVH_SPLIT_MODE SplitMode = SelectSplitMode(AABB);
 	switch (SplitMode) {
 	case KH_BVH_SPLIT_MODE::X_AXIS_SPLIT:
-		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_ScenePrimitive::Cmpx);
+		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_Primitive::CmpxPtr);
 		break;
 	case KH_BVH_SPLIT_MODE::Y_AXIS_SPLIT:
-		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_ScenePrimitive::Cmpy);
+		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_Primitive::CmpyPtr);
 		break;
 	case KH_BVH_SPLIT_MODE::Z_AXIS_SPLIT:
-		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_ScenePrimitive::Cmpz);
+		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_Primitive::CmpzPtr);
 		break;
 	}
 
@@ -176,8 +176,8 @@ void KH_BVHNode::BuildNodeSAH(std::vector<KH_ScenePrimitive>& Primitives, uint32
 	AABB.MaxPos = glm::vec3(-MaxInf);
 
 	for (int i = BeginIndex; i < EndIndex; i++) {
-		AABB.MinPos = glm::min(AABB.MinPos, Primitives[i].Primitive->GetAABB().MinPos);
-		AABB.MaxPos = glm::max(AABB.MaxPos, Primitives[i].Primitive->GetAABB().MaxPos);
+		AABB.MinPos = glm::min(AABB.MinPos, Primitives[i]->GetAABB().MinPos);
+		AABB.MaxPos = glm::max(AABB.MaxPos, Primitives[i]->GetAABB().MaxPos);
 	}
 
 	AABB.MinPos -= static_cast<float>(EPS);
@@ -195,13 +195,13 @@ void KH_BVHNode::BuildNodeSAH(std::vector<KH_ScenePrimitive>& Primitives, uint32
 	KH_BVHSplitInfo SplitInfo = SelectSplitModeSAH(Primitives, BeginIndex, EndIndex);
 	switch (SplitInfo.SplitMode) {
 	case KH_BVH_SPLIT_MODE::X_AXIS_SPLIT:
-		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_ScenePrimitive::Cmpx);
+		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_Primitive::CmpxPtr);
 		break;
 	case KH_BVH_SPLIT_MODE::Y_AXIS_SPLIT:
-		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_ScenePrimitive::Cmpy);
+		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_Primitive::CmpyPtr);
 		break;
 	case KH_BVH_SPLIT_MODE::Z_AXIS_SPLIT:
-		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_ScenePrimitive::Cmpz);
+		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_Primitive::CmpzPtr);
 		break;
 	}
 
@@ -322,8 +322,8 @@ int KH_FlatBVHNode::BuildNode(std::vector<KH_ScenePrimitive>& Primitives, std::v
 	FlatBVHNodes[ID].AABB.MaxPos = glm::vec3(-MaxInf);
 
 	for (int i = BeginIndex; i < EndIndex; i++) {
-		FlatBVHNodes[ID].AABB.MinPos = glm::min(FlatBVHNodes[ID].AABB.MinPos, Primitives[i].Primitive->GetAABB().MinPos);
-		FlatBVHNodes[ID].AABB.MaxPos = glm::max(FlatBVHNodes[ID].AABB.MaxPos, Primitives[i].Primitive->GetAABB().MaxPos);
+		FlatBVHNodes[ID].AABB.MinPos = glm::min(FlatBVHNodes[ID].AABB.MinPos, Primitives[i]->GetAABB().MinPos);
+		FlatBVHNodes[ID].AABB.MaxPos = glm::max(FlatBVHNodes[ID].AABB.MaxPos, Primitives[i]->GetAABB().MaxPos);
 	}
 
 	FlatBVHNodes[ID].AABB.MinPos -= static_cast<float>(EPS);
@@ -341,13 +341,13 @@ int KH_FlatBVHNode::BuildNode(std::vector<KH_ScenePrimitive>& Primitives, std::v
 	KH_BVH_SPLIT_MODE SplitMode = SelectSplitMode(FlatBVHNodes[ID].AABB);
 	switch (SplitMode) {
 	case KH_BVH_SPLIT_MODE::X_AXIS_SPLIT:
-		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_ScenePrimitive::Cmpx);
+		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_Primitive::CmpxPtr);
 		break;
 	case KH_BVH_SPLIT_MODE::Y_AXIS_SPLIT:
-		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_ScenePrimitive::Cmpy);
+		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_Primitive::CmpyPtr);
 		break;
 	case KH_BVH_SPLIT_MODE::Z_AXIS_SPLIT:
-		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_ScenePrimitive::Cmpz);
+		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_Primitive::CmpzPtr);
 		break;
 	}
 
@@ -378,8 +378,8 @@ int KH_FlatBVHNode::BuildNodeSAH(std::vector<KH_ScenePrimitive>& Primitives, std
 	FlatBVHNodes[ID].AABB.MaxPos = glm::vec3(-MaxInf);
 
 	for (int i = BeginIndex; i < EndIndex; i++) {
-		FlatBVHNodes[ID].AABB.MinPos = glm::min(FlatBVHNodes[ID].AABB.MinPos, Primitives[i].Primitive->GetAABB().MinPos);
-		FlatBVHNodes[ID].AABB.MaxPos = glm::max(FlatBVHNodes[ID].AABB.MaxPos, Primitives[i].Primitive->GetAABB().MaxPos);
+		FlatBVHNodes[ID].AABB.MinPos = glm::min(FlatBVHNodes[ID].AABB.MinPos, Primitives[i]->GetAABB().MinPos);
+		FlatBVHNodes[ID].AABB.MaxPos = glm::max(FlatBVHNodes[ID].AABB.MaxPos, Primitives[i]->GetAABB().MaxPos);
 	}
 
 	FlatBVHNodes[ID].AABB.MinPos -= static_cast<float>(EPS);
@@ -397,13 +397,13 @@ int KH_FlatBVHNode::BuildNodeSAH(std::vector<KH_ScenePrimitive>& Primitives, std
 	KH_BVHSplitInfo SplitInfo = SelectSplitModeSAH(Primitives, BeginIndex, EndIndex);
 	switch (SplitInfo.SplitMode) {
 	case KH_BVH_SPLIT_MODE::X_AXIS_SPLIT:
-		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_ScenePrimitive::Cmpx);
+		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_Primitive::CmpxPtr);
 		break;
 	case KH_BVH_SPLIT_MODE::Y_AXIS_SPLIT:
-		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_ScenePrimitive::Cmpy);
+		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_Primitive::CmpyPtr);
 		break;
 	case KH_BVH_SPLIT_MODE::Z_AXIS_SPLIT:
-		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_ScenePrimitive::Cmpz);
+		std::sort(Primitives.begin() + BeginIndex, Primitives.begin() + EndIndex, KH_Primitive::CmpzPtr);
 		break;
 	}
 

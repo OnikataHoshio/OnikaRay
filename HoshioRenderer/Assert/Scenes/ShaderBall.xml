@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Scene version="3">
+    <Materials>
+        <Material id="0" baseColor="1 1 1" emissive="1 1 1" subsurface="0" metallic="0" specular="0" specularTint="0" roughness="0" anisotropic="0" sheen="0" sheenTint="0" clearcoat="0" clearcoatGloss="0" ior="1" transmission="0"/>
+        <Material id="1" baseColor="0.35864979 0.35864979 0.35864979" emissive="0 0 0" subsurface="0" metallic="0" specular="0.5" specularTint="0" roughness="0.5" anisotropic="0" sheen="0" sheenTint="0" clearcoat="0" clearcoatGloss="0" ior="1.5" transmission="0"/>
+        <Material id="2" baseColor="0.766391456 0.932489455 0.361979067" emissive="0 0 0" subsurface="1" metallic="1" specular="0.5" specularTint="0" roughness="0.5" anisotropic="0" sheen="0" sheenTint="0" clearcoat="0" clearcoatGloss="0" ior="1.5" transmission="0"/>
+        <Material id="3" baseColor="1 1 1" emissive="0 0 0" subsurface="0" metallic="0" specular="0.5" specularTint="0" roughness="0.5" anisotropic="0" sheen="0" sheenTint="0" clearcoat="0" clearcoatGloss="0" ior="1.5" transmission="0"/>
+    </Materials>
+    <Objects>
+        <Model sourceType="Asset" path="D:\Dev\GraphicsXMU\Projects\Hoshio\HoshioRenderer\HoshioRenderer\Assert\Models\shaderBall.obj">
+            <MeshMaterialSlots>
+                <MeshMaterialSlot meshID="0" material="2"/>
+                <MeshMaterialSlot meshID="1" material="1"/>
+                <MeshMaterialSlot meshID="2" material="2"/>
+                <MeshMaterialSlot meshID="3" material="1"/>
+                <MeshMaterialSlot meshID="4" material="2"/>
+            </MeshMaterialSlots>
+            <Transform position="0 0 0" rotation="0 -0 0" scale="1 1 1"/>
+        </Model>
+        <Model sourceType="Builtin" builtinType="Plane" size="1">
+            <MeshMaterialSlots>
+                <MeshMaterialSlot meshID="0" material="3"/>
+            </MeshMaterialSlots>
+            <Transform position="0 0 0" rotation="0 -0 0" scale="1.89999998 1.89999998 1.89999998"/>
+        </Model>
+        <Model sourceType="Builtin" builtinType="Plane" size="1">
+            <MeshMaterialSlots>
+                <MeshMaterialSlot meshID="0" material="0"/>
+            </MeshMaterialSlots>
+            <Transform position="0 0.902865648 0" rotation="0 -0 0" scale="0.651199937 0.651199937 0.651199937"/>
+        </Model>
+    </Objects>
+</Scene>

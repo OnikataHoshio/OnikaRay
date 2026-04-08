@@ -3,6 +3,10 @@
 #include "KH_Window.h"
 #include "KH_Canvas.h"
 
+#include "KH_MaterialEditor.h"
+#include "Scene/KH_Scene.h"
+
+
 class KH_SceneBase;
 
 enum class KH_GizmoOperation
@@ -27,6 +31,7 @@ public:
     KH_Editor& operator=(const KH_Editor&) = delete;
 
     void BeginRender();
+    void Render();
     void EndRender();
 
     void UpdateCanvasExtent(uint32_t Width, uint32_t Height);
@@ -35,12 +40,13 @@ public:
 
     const KH_Framebuffer& GetLastFramebuffer();
 
-    int32_t GetSelectedObjectIndex() const;
+    int GetSelectedObjectID() const;
+    int GetSelectedObjectMeshID() const;
 
-    void ResetFrameCounter();
     uint32_t GetFrameCounter() const;
 
     void RequestSceneRebuild();
+    void RequestFrameReset();
 
     KH_Canvas& GetCanvas();
 
@@ -49,21 +55,29 @@ public:
     static void SetCanvasWidth(uint32_t Width);
     static void SetCanvasHeight(uint32_t Height);
     static void SetTitle(std::string Title);
+    static void SetDefaultScenePath(std::string ScenePath);
 
     static uint32_t GetEditorWidth();
     static uint32_t GetEdtiorHeight();
     static uint32_t GetCanvasWidth();
     static uint32_t GetCanvasHeight();
     static const std::string& GetTitle();
+    static const std::string& GetDefaultScenePath();
 
     GLFWwindow* GLFWwindow() const;
 
     // 在 Canvas 窗口内部调用
     void DrawCanvasGizmos();
 
+    void SetSelectedObjectID(int ObjectID, int MeshID = 0);
+    bool DeleteSelectedObject(bool OnlyDeleteModel = true);
+
+    bool AddExternalModelFromFile(const std::string& filePath, int materialSlotID = 0);
+    bool AddBuiltinModel(int builtinTypeIndex, float size = 1.0f, int materialSlotID = 0);
+
     KH_Camera Camera;
     KH_Window Window;
-    KH_SceneBase* Scene = nullptr;
+    KH_GpuLBVHScene Scene;
 
 private:
     static uint32_t EditorWidth;
@@ -71,11 +85,14 @@ private:
     static uint32_t CanvasWidth;
     static uint32_t CanvasHeight;
     static std::string Title;
+    static std::string DefaultScenePath;
 
     uint32_t FrameCounter = 0;
-    int32_t SelectedObjectIndex = -1;
+    int SelectedObjectID = -1;
+    int SelectedObjectMeshID = -1;
 
     bool bSceneRebuildRequested = false;
+    bool bFrameResetRequested = false;
 
     bool bGizmoOver = false;
     bool bGizmoUsing = false;
@@ -99,6 +116,11 @@ private:
     KH_Console Console;
     KH_Insepctor Inspector;
     KH_GlobalInfo GlobalInfo;
+    KH_SceneTree SceneTree;
+    KH_MaterialEditor MaterialsEditor;
+
+    std::string CurrentSceneXmlPath;
+
 
     KH_Editor();
     ~KH_Editor();
@@ -111,12 +133,30 @@ private:
     void BeginImgui();
     void EndImgui();
 
-    void UpdateSelectedObjectIndex();
+    void ResetFrameCounter();
+
+    void UpdateSelectedObjectID();
 
     void DrawObjectGizmo();
     void DrawViewManipulator();
     void ApplyViewManipulatorToCamera(const glm::mat4& manipulatedView, const glm::vec3& pivot, float distance);
     glm::vec3 GetViewManipulatorPivot() const;
+
+    void DrawMainMenuBar();
+    void OpenImportSceneDialog();
+    bool ImportSceneFromFile(const std::string& filePath);
+
+    bool SaveSceneToFile(const std::string& filePath);
+    bool SaveSceneAs();
+    bool SaveScene();
+
+    void NewScene();
+
+    void OpenImportModelDialog();
+    void DrawCanvasContextMenu();
+
+    int EnsureUsableMaterialSlot(int requestedSlot);
+    void InitializeSpawnedObjectTransform(KH_Object& object);
 };
 
 

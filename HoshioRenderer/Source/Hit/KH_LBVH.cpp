@@ -38,7 +38,8 @@ void KH_LBVH::BindAndBuild(std::vector<KH_SceneObject>& Objects)
 	FillDeltaBuffer();
 	InitLBVHNodes();
 	BuildBVH();
-	FillModelMatrices(MaxBVHDepth);
+
+	//FillModelMatrices(MaxBVHDepth);
 }
 
 void KH_LBVH::BindAndBuild(std::vector<KH_SceneObject>& Objects, KH_AABB AABB)
@@ -55,7 +56,8 @@ void KH_LBVH::BindAndBuild(std::vector<KH_SceneObject>& Objects, KH_AABB AABB)
 	FillDeltaBuffer();
 	InitLBVHNodes();
 	BuildBVH();
-	FillModelMatrices(MaxBVHDepth);
+
+	//FillModelMatrices(MaxBVHDepth);
 }
 
 std::vector<KH_BVHHitInfo> KH_LBVH::Hit(KH_Ray& Ray)
@@ -75,7 +77,7 @@ void KH_LBVH::SortPrimitiveIndices()
 
 	for (int i = 0; i < PrimitiveCount; i++)
 	{
-		glm::vec3 Position = Primitives[i].Primitive->GetAABBCenter();
+		glm::vec3 Position = Primitives[i]->GetAABBCenter();
 		glm::vec3 p = (Position - AABB.MinPos) * AABB_InvSize;
 		p = glm::clamp(p, glm::vec3(0.0f), glm::vec3(1.0f));
 		PrimitiveMorton3Ds[i] = KH_MortonCode::Morton3DFloat_IndexAugmentation(p, i);
@@ -127,7 +129,7 @@ void KH_LBVH::InitLBVHNodes()
 	for (int i = 0; i < PrimitiveCount; i++)
 	{
 		BVHNodes[i].Range = glm::ivec2(i, i);
-		BVHNodes[i].AABB = Primitives[SortedIndices[i]].Primitive->GetAABB();
+		BVHNodes[i].AABB = Primitives[SortedIndices[i]]->GetAABB();
 	}
 
 	AtomicTags.assign(PrimitiveCount - 1, -1);
@@ -248,24 +250,6 @@ void KH_LBVH::FillModelMatrices(uint32_t TargetDepth)
 }
 
 
-//void KH_LBVH::FillModelMatrices_Inner(int LBVHNodeID, uint32_t CurrentDepth, uint32_t TargetDepth)
-//{
-//	if (LBVHNodeID == KH_LBVH_NULL_NODE)
-//		return;
-//
-//	if (CurrentDepth == TargetDepth || IsLeafNode(LBVHNodeID))
-//	{
-//		//TODO : Do some optimization
-//		ModelMats.push_back(BVHNodes[LBVHNodeID].AABB.GetModelMatrix());
-//		MatCount += 1;
-//		return;
-//	}
-//
-//	FillModelMatrices_Inner(BVHNodes[LBVHNodeID].Left, CurrentDepth + 1, TargetDepth);
-//	FillModelMatrices_Inner(BVHNodes[LBVHNodeID].Right, CurrentDepth + 1, TargetDepth);
-//}
-
-
 void KH_GpuLBVH::Initialize()
 {
 	this->ElementCount = pScene->PrimitiveCount;
@@ -288,7 +272,7 @@ void KH_GpuLBVH::SetSSBOs()
 	Centers.reserve(ElementCount);
 	std::vector<KH_SceneObject>& Objects = pScene->Objects;
 	for (auto& Object : Objects)
-		Object.Object->CollectPrimitiveAABBCenters(Centers);
+		Object->CollectPrimitiveAABBCenters(Centers);
 
 	CentersSSBO.SetData(Centers, GL_DYNAMIC_DRAW);
 
@@ -313,7 +297,7 @@ void KH_GpuLBVH::SetSSBOs()
 	if (LBVHNodeSSBO.GetCount() != LBVHNodeCount)
 		LBVHNodeSSBO.SetData(nullptr, LBVHNodeCount, GL_DYNAMIC_DRAW);
 
-	std::vector<int> AtomicFlags(ElementCount - 1, -1);
+	std::vector<int> AtomicFlags(ElementCount - 1 >= 0 ? ElementCount - 1: 0, -1);
 	AtomicFlagSSBO.SetData(AtomicFlags, GL_DYNAMIC_DRAW);
 }
 
@@ -419,7 +403,7 @@ void KH_GpuLBVH::BuildLBVH()
 	RunPrecomputeDelta();
 	RunBuildLBVH();
 
-	FillModelMatrices();
+	//FillModelMatrices();
 }
 
 void KH_GpuLBVH::RenderAABB(const KH_Shader& Shader, glm::vec3 Color) const

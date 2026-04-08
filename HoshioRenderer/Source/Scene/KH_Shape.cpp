@@ -2,7 +2,8 @@
 #include "Hit/KH_Ray.h"
 #include "Utils/KH_DebugUtils.h"
 
-
+#include "Editor/KH_Editor.h"
+#include "KH_Model.h"
 
 glm::quat KH_Object::EulerDegreesToQuatXYZ(const glm::vec3& degreesXYZ)
 {
@@ -55,6 +56,66 @@ KH_InspectorEditResult KH_Object::DrawInspector()
 
     ImGui::Spacing();
     ImGui::Unindent(20.0f);
+
+    if (KH_Model* model = dynamic_cast<KH_Model*>(this))
+    {
+        KH_Editor& editor = KH_Editor::Instance();
+        KH_GpuLBVHScene& scene = editor.Scene;
+
+        const int selectedMeshID = editor.GetSelectedObjectMeshID();
+        const auto& meshes = model->GetMeshes();
+
+        ImGui::SeparatorText("Material");
+        ImGui::Indent(20.0f);
+
+        if (scene.Materials.empty())
+        {
+            ImGui::TextDisabled("No materials in scene");
+        }
+        else if (selectedMeshID < 0 || selectedMeshID >= static_cast<int>(meshes.size()))
+        {
+            ImGui::TextDisabled("No mesh selected");
+        }
+        else
+        {
+            int materialID = meshes[selectedMeshID].GetMaterialSlotID();
+            materialID = std::clamp(materialID, 0, static_cast<int>(scene.Materials.size()) - 1);
+
+            std::vector<std::string> labels;
+            std::vector<const char*> items;
+            labels.reserve(scene.Materials.size());
+            items.reserve(scene.Materials.size());
+
+            for (int i = 0; i < static_cast<int>(scene.Materials.size()); ++i)
+            {
+                labels.push_back("Material " + std::to_string(i));
+            }
+
+            for (auto& s : labels)
+            {
+                items.push_back(s.c_str());
+            }
+
+            if (ImGui::Combo("Material", &materialID, items.data(), static_cast<int>(items.size())))
+            {
+                materialID = std::clamp(materialID, 0, static_cast<int>(scene.Materials.size()) - 1);
+
+                model->SetMeshMaterialSlotID(materialID, selectedMeshID);
+                
+                scene.UpdatePrimitiveSSBO();
+                editor.RequestFrameReset();
+
+                result.bValueChanged = true;
+                result.CommitType = KH_InspectorCommitType::UpdateMaterial;
+            }
+
+            ImGui::TextDisabled("Selected Mesh ID: %d", selectedMeshID);
+        }
+
+        ImGui::Spacing();
+        ImGui::Unindent(20.0f);
+    }
+
 
     return result;
 }
@@ -243,11 +304,6 @@ void KH_Object::OnTransformChanged()
     UpdateNormalMatrix();
 }
 
-KH_HitResult KH_Hitable::Pick(const KH_Ray& Ray) const
-{
-    return Hit(Ray);
-}
-
 void KH_Hitable::CollectPrimitiveAABBCenters(std::vector<glm::vec4>& outCenters) const
 {
     outCenters.push_back(glm::vec4(AABB.GetCenter(), 1.0f));
@@ -310,25 +366,6 @@ bool KH_Primitive::CmpzPtr(const std::unique_ptr<KH_Primitive>& p1, const std::u
     return Cmpz(*p1, *p2);
 }
 
-bool KH_ScenePrimitive::Cmpx(const KH_ScenePrimitive& p1, const KH_ScenePrimitive& p2)
-{
-    return KH_Primitive::CmpxPtr(p1.Primitive, p2.Primitive);
-}
-
-bool KH_ScenePrimitive::Cmpy(const KH_ScenePrimitive& p1, const KH_ScenePrimitive& p2)
-{
-    return KH_Primitive::CmpyPtr(p1.Primitive, p2.Primitive);
-}
-
-bool KH_ScenePrimitive::Cmpz(const KH_ScenePrimitive& p1, const KH_ScenePrimitive& p2)
-{
-    return KH_Primitive::CmpzPtr(p1.Primitive, p2.Primitive);
-}
-
-KH_HitResult KH_ScenePrimitive::Hit(KH_Ray& Ray) const
-{
-    return Primitive->Hit(Ray);
-}
 
 KH_Triangle::KH_Triangle()
 {
@@ -376,6 +413,8 @@ KH_Triangle::KH_Triangle(glm::vec3 P1, glm::vec3 P2, glm::vec3 P3, glm::vec3 N1,
 }
 
 
+
+
 KH_HitResult KH_Triangle::Hit(const KH_Ray& Ray) const
 {
     // MT算法
@@ -417,7 +456,7 @@ uint32_t KH_Triangle::GetPrimitiveCount() const
     return 1;
 }
 
-void KH_Triangle::EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitives, int MaterialSlotID) const
+void KH_Triangle::EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitives) const
 {
     KH_TriangleWorldData Data = GetWorldData();
 
@@ -437,11 +476,10 @@ void KH_Triangle::EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitiv
     outPrimitives.push_back(primitive);
 }
 
-void KH_Triangle::CollectPrimitives(std::vector<KH_ScenePrimitive>& outPrimitives, int MaterialSlotID) const
+void KH_Triangle::CollectPrimitives(std::vector<KH_ScenePrimitive>& outPrimitives) const
 {
     outPrimitives.emplace_back(KH_ScenePrimitive{
-    std::make_unique<KH_Triangle>(*this),
-    MaterialSlotID
+    std::make_unique<KH_Triangle>(*this)
         });
 }
 

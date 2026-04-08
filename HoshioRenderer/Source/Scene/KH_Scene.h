@@ -31,15 +31,7 @@ struct KH_CameraParam {
     glm::vec4 Front;
 };
 
-struct KH_PickResult
-{
-    bool bIsHit = false;
-    int ObjectIndex = -1;
-    int MaterialSlotID = KH_MATERIAL_UNDEFINED_SLOT;
-    float Distance = std::numeric_limits<float>::max();
-    glm::vec3 HitPoint = glm::vec3(0.0f);
-    glm::vec3 Normal = glm::vec3(0.0f);
-};
+
 
 class KH_SceneBase {
     friend class KH_GpuLBVH;
@@ -69,9 +61,15 @@ public:
     const std::vector<KH_SceneObject>& GetObjects() const;
 
 	KH_Model& AddModel(int MaterialSlotID, const std::string& Path);
-    KH_Triangle& AddTriangle(int MaterialSlotID, KH_Triangle Triangle);
+    KH_Model& AddModel(int MaterialSlotID, KH_Model&& Model);
+    KH_Model& AddEmptyModel(int MaterialSlotID);
+
+    int AddMaterial(const KH_BRDFMaterial& material = KH_BRDFMaterial{});
+    bool DeleteMaterial(int materialID);
 
     void Clear();
+
+    bool RemoveObjectAt(size_t Index);
 
     bool SaveToXml(const std::string& filePath) const;
     bool LoadFromXml(const std::string& filePath);
@@ -80,6 +78,7 @@ public:
 
     virtual void BindAndBuild() = 0;
 };
+
 
 
 class KH_GpuLBVHScene : public KH_SceneBase
@@ -102,28 +101,8 @@ public:
     ~KH_GpuLBVHScene() = default;
 
     void BindAndBuild() override;
+    void UpdateMaterialSSBO();
+    void UpdatePrimitiveSSBO();
     void Render();
-};
-
-class KH_GpuLBVHExampleScenes : public KH_Singleton<KH_GpuLBVHExampleScenes>
-{
-    friend class KH_Singleton<KH_GpuLBVHExampleScenes>;
-
-private:
-    KH_GpuLBVHExampleScenes() {
-        InitBunny();
-        InitDebugBox();
-        InitSingleTriangle();
-    }
-    ~KH_GpuLBVHExampleScenes() override = default;
-
-    void InitSingleTriangle();
-    void InitDebugBox();
-    void InitBunny();
-
-public:
-    KH_GpuLBVHScene Bunny;
-    KH_GpuLBVHScene SingleTriangle;
-    KH_GpuLBVHScene DebugBox;
 };
 

@@ -5,8 +5,9 @@
 
 struct KH_HitResult;
 class KH_Ray;
-struct KH_ScenePrimitive;
 
+class KH_Primitive;
+using KH_ScenePrimitive = std::unique_ptr<KH_Primitive>;
 
 enum class KH_InspectorCommitType
 {
@@ -77,10 +78,9 @@ public:
 	KH_Object& operator=(KH_Object&&) noexcept = default;
 
 	virtual uint32_t GetPrimitiveCount() const = 0;
-	virtual void EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitives, int MaterialSlotID) const = 0;
-	virtual void CollectPrimitives(std::vector<KH_ScenePrimitive>& outPrimitives, int MaterialSlotID) const = 0;
+	virtual void EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitives) const = 0;
+	virtual void CollectPrimitives(std::vector<KH_ScenePrimitive>& outPrimitives) const = 0;
 	virtual void CollectPrimitiveAABBCenters(std::vector<glm::vec4>& outCenters) const = 0;
-	virtual KH_HitResult Pick(const KH_Ray& Ray) const = 0;
 	virtual const KH_AABB& GetAABB() const = 0;
 
 	virtual KH_InspectorEditResult DrawInspector();
@@ -145,16 +145,8 @@ public:
 	KH_Hitable() = default;
 	virtual ~KH_Hitable() override = default;
 	virtual KH_HitResult Hit(const KH_Ray& Ray) const = 0;
-	virtual KH_HitResult Pick(const KH_Ray& Ray) const override;
-
-	virtual uint32_t GetPrimitiveCount() const override = 0;
-	virtual void EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitives,
-		int MaterialSlotID) const override = 0;
-	virtual void CollectPrimitives(std::vector<KH_ScenePrimitive>& outPrimitives,
-		int MaterialSlotID) const override = 0;
-	virtual void CollectPrimitiveAABBCenters(std::vector<glm::vec4>& outCenters) const override = 0;
 	virtual const KH_AABB& GetAABB() const override;
-
+	virtual void CollectPrimitiveAABBCenters(std::vector<glm::vec4>& outCenters) const override;
 protected:
 	virtual void UpdateAABB() = 0;
 	virtual void OnTransformChanged() override;
@@ -164,18 +156,16 @@ class KH_Primitive : public KH_Hitable
 {
 public:
 	KH_PrimitiveType PrimitiveType;
+	int MaterialSlotID = 0;
+
 	glm::vec3 GetMinPos() const;
 	glm::vec3 GetMaxPos() const;
 	glm::vec3 GetAABBCenter() const;
-
+	virtual glm::vec3 GetCenterWS() const = 0;
 	virtual uint32_t GetPrimitiveCount() const override = 0;
-	virtual void EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitives,
-		int MaterialSlotID) const override = 0;
-	virtual void CollectPrimitives(std::vector<KH_ScenePrimitive>& outPrimitives,
-		int MaterialSlotID) const override = 0;
+
 	virtual void CollectPrimitiveAABBCenters(std::vector<glm::vec4>& outCenters) const override = 0;
 	
-	virtual glm::vec3 GetCenterWS() const = 0;
 
 	static bool Cmpx(const KH_Primitive& p1, const KH_Primitive& p2);
 	static bool Cmpy(const KH_Primitive& p1, const KH_Primitive& p2);
@@ -190,24 +180,6 @@ public:
 
 protected:
 	virtual void UpdateAABB() override = 0;
-};
-
-struct KH_SceneObject
-{
-	std::unique_ptr<KH_Object> Object;
-	int MaterialSlotID = KH_MATERIAL_UNDEFINED_SLOT;
-};
-
-struct KH_ScenePrimitive
-{
-	std::unique_ptr<KH_Primitive> Primitive;
-	int MaterialSlotID = KH_MATERIAL_UNDEFINED_SLOT;
-
-	static bool Cmpx(const KH_ScenePrimitive& p1, const KH_ScenePrimitive& p2);
-	static bool Cmpy(const KH_ScenePrimitive& p1, const KH_ScenePrimitive& p2);
-	static bool Cmpz(const KH_ScenePrimitive& p1, const KH_ScenePrimitive& p2);
-
-	KH_HitResult Hit(KH_Ray& Ray) const;
 };
 
 class KH_Triangle : public KH_Primitive
@@ -230,6 +202,7 @@ public:
 	glm::vec3 CenterWS;
 	glm::vec3 NormalWS;
 
+
 	KH_Triangle();
 	KH_Triangle(glm::vec3 P1, glm::vec3 P2, glm::vec3 P3);
 	KH_Triangle(glm::vec3 P1, glm::vec3 P2, glm::vec3 P3, glm::vec3 N1, glm::vec3 N2, glm::vec3 N3);
@@ -239,15 +212,14 @@ public:
 	virtual KH_HitResult Hit(const KH_Ray& Ray) const override;
 
 	virtual uint32_t GetPrimitiveCount() const override;
-	virtual void EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitives,
-		int MaterialSlotID) const override;
-	virtual void CollectPrimitives(std::vector<KH_ScenePrimitive>& outPrimitives,
-		int MaterialSlotID) const override;
+	virtual void EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitives) const override;
+	virtual void CollectPrimitives(std::vector<KH_ScenePrimitive>& outPrimitives) const override;
 	virtual void CollectPrimitiveAABBCenters(std::vector<glm::vec4>& outCenters) const override;
 	
 	virtual glm::vec3 GetCenterWS() const override;
 
 private:
+
 	virtual void UpdateAABB() override;
 	virtual void UpdateOtherData();
 	virtual void OnTransformChanged() override;

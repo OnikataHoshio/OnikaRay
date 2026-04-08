@@ -88,7 +88,7 @@ void KH_Camera::ProcessKeyboard(CameraMovement direction, float deltaTime)
     if (direction == CameraMovement::Down)
         Position -= Up * velocity;
 
-    KH_Editor::Instance().ResetFrameCounter();
+    KH_Editor::Instance().RequestFrameReset();
 }
 
 void KH_Camera::ProcessMouseMovement(float xoffset, float yoffset, bool constrainPitch)
@@ -109,7 +109,7 @@ void KH_Camera::ProcessMouseMovement(float xoffset, float yoffset, bool constrai
 
     UpdateCameraVectors();
 
-    KH_Editor::Instance().ResetFrameCounter();
+    KH_Editor::Instance().RequestFrameReset();
 }
 
 void KH_Camera::ProcessMouseScroll(float yoffset)
@@ -122,7 +122,7 @@ void KH_Camera::ProcessMouseScroll(float yoffset)
     if (MovementSpeed > 20.0f)
         MovementSpeed = 20.0f;
 
-    KH_Editor::Instance().ResetFrameCounter();
+    KH_Editor::Instance().RequestFrameReset();
 }
 
 void KH_Camera::UpdateCameraVectors()

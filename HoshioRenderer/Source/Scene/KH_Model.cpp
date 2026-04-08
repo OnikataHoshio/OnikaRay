@@ -14,9 +14,13 @@ KH_Model::KH_Model(KH_Model&& other) noexcept
     : Meshes(std::move(other.Meshes)),
     Directory(std::move(other.Directory)),
     SourcePath(std::move(other.SourcePath)),
-	AABB(other.AABB)
+    SourceType(other.SourceType),
+    BuiltinType(other.BuiltinType),
+    BuiltinSize(other.BuiltinSize)
 {
+    AABB = other.AABB;
 }
+
 KH_Model& KH_Model::operator=(KH_Model&& other) noexcept
 {
     if (this != &other)
@@ -25,12 +29,49 @@ KH_Model& KH_Model::operator=(KH_Model&& other) noexcept
         Directory = std::move(other.Directory);
         SourcePath = std::move(other.SourcePath);
         AABB = other.AABB;
+        SourceType = other.SourceType;
+        BuiltinType = other.BuiltinType;
+        BuiltinSize = other.BuiltinSize;
     }
     return *this;
 }
 
+void KH_Model::SetSourceAsInline()
+{
+    SourceType = KH_ModelSourceType::Inline;
+    BuiltinType = KH_BuiltinModelType::None;
+    BuiltinSize = 1.0f;
+    SourcePath.clear();
+    Directory.clear();
+}
+
+void KH_Model::SetMeshMaterialSlotID(int MaterialSlotID)
+{
+    for (auto& mesh : Meshes)
+    {
+        mesh.MaterialSlotID = MaterialSlotID;
+    }
+}
+
+void KH_Model::SetMeshMaterialSlotID(int MaterialSlotID, int MeshID)
+{
+    if (MaterialSlotID < 0)
+        MaterialSlotID = 0;
+
+    if (MeshID < 0 || MeshID >= static_cast<int>(Meshes.size()))
+        return;
+
+    Meshes[MeshID].MaterialSlotID = MaterialSlotID;
+}
+
+
 void KH_Model::LoadModel(const std::string& path)
 {
+    SourceType = KH_ModelSourceType::Asset;
+    BuiltinType = KH_BuiltinModelType::None;
+    BuiltinSize = 1.0f;
+    SourcePath = path;
+
     Assimp::Importer import;
 
 	import.SetPropertyInteger(AI_CONFIG_PP_RVC_FLAGS, aiComponent_NORMALS);
@@ -42,10 +83,8 @@ void KH_Model::LoadModel(const std::string& path)
         aiProcess_FlipUVs |
         aiProcess_JoinIdenticalVertices |
         aiProcess_RemoveComponent |
-        aiProcess_GenSmoothNormals;
-
-    // 如果你后面确实要稳定使用切线空间，建议再打开：
-    // | aiProcess_CalcTangentSpace
+        aiProcess_GenSmoothNormals |
+        aiProcess_CalcTangentSpace;
 
     const aiScene* scene = import.ReadFile(path, flags);
 
@@ -62,24 +101,28 @@ void KH_Model::LoadModel(const std::string& path)
     ProcessNode(scene->mRootNode, scene);
     UpdateAABB();
     UpdateGizmoPivotLocal();
+
+    for (int i = 0; i < Meshes.size(); i++)
+    {
+        Meshes[i].LocalMeshID = i;
+    }
+
 }
 
-KH_HitResult KH_Model::Pick(const KH_Ray& Ray) const
+KH_PickResult KH_Model::Pick(const KH_Ray& Ray) const
 {
-    KH_HitResult best;
+    KH_PickResult best;
 
-    std::vector<KH_ScenePrimitive> primitives;
-    primitives.reserve(GetPrimitiveCount());
-    CollectPrimitives(primitives, KH_MATERIAL_UNDEFINED_SLOT);
+    const glm::mat4 model = GetModelMatrix();
+    const glm::mat3 normal = GetNormalMatrix();
 
-    for (auto& primitive : primitives)
+    for (auto& mesh : Meshes)
     {
         KH_Ray localRay = Ray;
-        KH_HitResult hit = primitive.Hit(localRay);
-
-        if (hit.bIsHit && hit.Distance < best.Distance)
+        KH_PickResult pick = mesh.Pick(localRay, model, normal);
+        if (pick.bIsHit && pick.Distance < best.Distance)
         {
-            best = hit;
+            best = pick;
         }
     }
 
@@ -94,9 +137,66 @@ KH_HitResult KH_Model::Pick(const KH_Ray& Ray) const
 void KH_Model::AddMesh(KH_Mesh&& mesh)
 {
     Meshes.push_back(std::move(mesh));
+    SetSourceAsInline();
     UpdateAABB();
     UpdateGizmoPivotLocal();
+    Meshes.back().LocalMeshID = Meshes.size() - 1;
 }
+
+
+KH_Model KH_Model::CreateBuiltin(KH_BuiltinModelType type, float size)
+{
+    KH_Model model;
+
+    switch (type)
+    {
+    case KH_BuiltinModelType::FullscreenQuad:
+        model.AddMesh(KH_PrimitiveFactory::CreateFullscreenQuadMesh(size));
+        break;
+    case KH_BuiltinModelType::Plane:
+        model.AddMesh(KH_PrimitiveFactory::CreatePlaneMesh(size));
+        break;
+    case KH_BuiltinModelType::Cube:
+        model.AddMesh(KH_PrimitiveFactory::CreateCubeMesh(size));
+        break;
+    case KH_BuiltinModelType::EmptyCube:
+        model.AddMesh(KH_PrimitiveFactory::CreateEmptyCubeMesh(size));
+        break;
+    default:
+        break;
+    }
+
+    model.SourceType = KH_ModelSourceType::Builtin;
+    model.BuiltinType = type;
+    model.BuiltinSize = size;
+    model.SourcePath.clear();
+    model.Directory.clear();
+
+    return model;
+}
+
+KH_HitResult KH_Model::Hit(const KH_Ray& Ray) const
+{
+    KH_HitResult best;
+
+    std::vector<KH_ScenePrimitive> primitives;
+    primitives.reserve(GetPrimitiveCount());
+    CollectPrimitives(primitives);
+
+    for (auto& primitive : primitives)
+    {
+        KH_Ray localRay = Ray;
+        KH_HitResult hit = primitive->Hit(localRay);
+
+        if (hit.bIsHit && hit.Distance < best.Distance)
+        {
+            best = hit;
+        }
+    }
+
+    return best;
+}
+
 
 uint32_t KH_Model::GetPrimitiveCount() const
 {
@@ -106,25 +206,25 @@ uint32_t KH_Model::GetPrimitiveCount() const
     return NumPrimitive;
 }
 
-void KH_Model::EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitives, int MaterialSlotID) const
+void KH_Model::EncodePrimitives(std::vector<KH_PrimitiveEncoded>& outPrimitives) const
 {
     const glm::mat4 model = GetModelMatrix();
     const glm::mat3 normal = GetNormalMatrix();
 
     for (const auto& mesh : Meshes)
     {
-        mesh.EncodePrimitives(outPrimitives, MaterialSlotID, model, normal);
+        mesh.EncodePrimitives(outPrimitives, model, normal);
     }
 }
 
-void KH_Model::CollectPrimitives(std::vector<KH_ScenePrimitive>& outPrimitives, int MaterialSlotID) const
+void KH_Model::CollectPrimitives(std::vector<KH_ScenePrimitive>& outPrimitives) const
 {
     const glm::mat4 model = GetModelMatrix();
     const glm::mat3 normal = GetNormalMatrix();
 
     for (const auto& mesh : Meshes)
     {
-        mesh.CollectPrimitives(outPrimitives, MaterialSlotID, model, normal);
+        mesh.CollectPrimitives(outPrimitives, model, normal);
     }
 }
 
@@ -149,6 +249,7 @@ void KH_Model::Render(KH_Shader& Shader)
 	for (unsigned int i = 0; i < Meshes.size(); i++)
 		Meshes[i].Render(Shader);
 }
+
 
 void KH_Model::ProcessNode(aiNode* node, const aiScene* scene)
 {
@@ -383,25 +484,25 @@ KH_Mesh KH_PrimitiveFactory::CreatePlaneMesh(float size)
     vertices[0].UV = glm::vec2(0.0f, 0.0f);
 
     // 顶点 1：右下
-    vertices[1].Position = glm::vec3(halfSize,  0.0f, -halfSize);
-    vertices[0].Normal = glm::vec3(0.0f, 1.0f, 0.0f);
-    vertices[0].Tangent = glm::vec3(1.0f, 0.0f, 0.0f);
-    vertices[0].Bitangent = glm::vec3(0.0f, 0.0f, 1.0f);
-    vertices[0].UV = glm::vec2(0.0f, 0.0f);
+    vertices[1].Position = glm::vec3(halfSize, 0.0f, -halfSize);
+    vertices[1].Normal = glm::vec3(0.0f, 1.0f, 0.0f);
+    vertices[1].Tangent = glm::vec3(1.0f, 0.0f, 0.0f);
+    vertices[1].Bitangent = glm::vec3(0.0f, 0.0f, 1.0f);
+    vertices[1].UV = glm::vec2(1.0f, 0.0f);
 
     // 顶点 2：右上
-    vertices[2].Position = glm::vec3(halfSize,  0.0f, halfSize);
-    vertices[0].Normal = glm::vec3(0.0f, 1.0f, 0.0f);
-    vertices[0].Tangent = glm::vec3(1.0f, 0.0f, 0.0f);
-    vertices[0].Bitangent = glm::vec3(0.0f, 0.0f, 1.0f);
-    vertices[0].UV = glm::vec2(0.0f, 0.0f);
+    vertices[2].Position = glm::vec3(halfSize, 0.0f, halfSize);
+    vertices[2].Normal = glm::vec3(0.0f, 1.0f, 0.0f);
+    vertices[2].Tangent = glm::vec3(1.0f, 0.0f, 0.0f);
+    vertices[2].Bitangent = glm::vec3(0.0f, 0.0f, 1.0f);
+    vertices[2].UV = glm::vec2(1.0f, 1.0f);
 
     // 顶点 3：左上
-    vertices[3].Position = glm::vec3(-halfSize,  0.0f, halfSize);
-    vertices[0].Normal = glm::vec3(0.0f, 1.0f, 0.0f);
-    vertices[0].Tangent = glm::vec3(1.0f, 0.0f, 0.0f);
-    vertices[0].Bitangent = glm::vec3(0.0f, 0.0f, 1.0f);
-    vertices[0].UV = glm::vec2(0.0f, 0.0f);
+    vertices[3].Position = glm::vec3(-halfSize, 0.0f, halfSize);
+    vertices[3].Normal = glm::vec3(0.0f, 1.0f, 0.0f);
+    vertices[3].Tangent = glm::vec3(1.0f, 0.0f, 0.0f);
+    vertices[3].Bitangent = glm::vec3(0.0f, 0.0f, 1.0f);
+    vertices[3].UV = glm::vec2(0.0f, 1.0f);
 
     std::vector<unsigned int> indices =
     {
@@ -410,7 +511,6 @@ KH_Mesh KH_PrimitiveFactory::CreatePlaneMesh(float size)
     };
 
     std::vector<KH_Texture> textures;
-
     return KH_Mesh(vertices, indices, textures);
 }
 
@@ -578,31 +678,22 @@ KH_Mesh KH_PrimitiveFactory::CreateEmptyCubeMesh(float size)
 
 KH_Model KH_PrimitiveFactory::CreateFullscreenQuad(float size)
 {
-    KH_Model model;
-    model.AddMesh(CreateFullscreenQuadMesh(size));
-    return model;
+    return KH_Model::CreateBuiltin(KH_BuiltinModelType::FullscreenQuad, size);
 }
 
 KH_Model KH_PrimitiveFactory::CreatePlane(float size)
 {
-    KH_Model model;
-    model.AddMesh(CreatePlaneMesh(size));
-    return model;
+    return KH_Model::CreateBuiltin(KH_BuiltinModelType::Plane, size);
 }
-
 
 KH_Model KH_PrimitiveFactory::CreateCube(float size)
 {
-    KH_Model model;
-    model.AddMesh(CreateCubeMesh(size));
-    return model;
+    return KH_Model::CreateBuiltin(KH_BuiltinModelType::Cube, size);
 }
 
 KH_Model KH_PrimitiveFactory::CreateEmptyCube(float size)
 {
-    KH_Model model;
-    model.AddMesh(CreateEmptyCubeMesh(size));
-    return model;
+    return KH_Model::CreateBuiltin(KH_BuiltinModelType::EmptyCube, size);
 }
 
 KH_DefaultModels::KH_DefaultModels()

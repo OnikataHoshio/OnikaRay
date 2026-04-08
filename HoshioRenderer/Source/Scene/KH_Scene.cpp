@@ -30,14 +30,14 @@ std::vector<KH_PrimitiveEncoded> KH_SceneBase::EncodePrimitives()
     PrimitiveCount = 0;
     for (int i = 0; i < Objects.size(); i++)
     {
-        PrimitiveCount += Objects[i].Object->GetPrimitiveCount();
+        PrimitiveCount += Objects[i]->GetPrimitiveCount();
     }
 
     Encoded.reserve(PrimitiveCount);
 
     for (const auto& sceneObject : Objects)
     {
-        sceneObject.Object->EncodePrimitives(Encoded, sceneObject.MaterialSlotID);
+        sceneObject->EncodePrimitives(Encoded);
     }
 
     return Encoded;
@@ -77,25 +77,87 @@ KH_Model& KH_SceneBase::AddModel(int MaterialSlotID, const std::string& Path)
     auto obj = std::make_unique<KH_Model>(Path);
     KH_Model& ref = *obj;
 
-    Objects.push_back({
-        std::move(obj),
-        MaterialSlotID
-        });
+    if (MaterialSlotID != KH_MATERIAL_UNDEFINED_SLOT)
+    {
+        ref.SetMeshMaterialSlotID(MaterialSlotID);
+    }
 
+    Objects.push_back(std::move(obj));
     return ref;
 }
 
-KH_Triangle& KH_SceneBase::AddTriangle(int MaterialSlotID, KH_Triangle Triangle)
+KH_Model& KH_SceneBase::AddModel(int MaterialSlotID, KH_Model&& Model)
 {
-    auto obj = std::make_unique<KH_Triangle>(Triangle);
-    KH_Triangle& ref = *obj;
+    auto obj = std::make_unique<KH_Model>(std::move(Model));
+    KH_Model& ref = *obj;
 
-    Objects.push_back({
-        std::move(obj),
-        MaterialSlotID
-        });
+    if (MaterialSlotID != KH_MATERIAL_UNDEFINED_SLOT)
+    {
+        ref.SetMeshMaterialSlotID(MaterialSlotID);
+    }
 
+    Objects.push_back(std::move(obj));
     return ref;
+}
+
+KH_Model& KH_SceneBase::AddEmptyModel(int MaterialSlotID)
+{
+    auto obj = std::make_unique<KH_Model>();
+    KH_Model& ref = *obj;
+
+    if (MaterialSlotID != KH_MATERIAL_UNDEFINED_SLOT)
+    {
+        ref.SetMeshMaterialSlotID(MaterialSlotID);
+    }
+
+    Objects.push_back(std::move(obj));
+    return ref;
+}
+
+// 新增
+int KH_SceneBase::AddMaterial(const KH_BRDFMaterial& material)
+{
+    Materials.push_back(material);
+    return static_cast<int>(Materials.size()) - 1;
+}
+
+// 新增
+bool KH_SceneBase::DeleteMaterial(int materialID)
+{
+    if (materialID < 0 || materialID >= static_cast<int>(Materials.size()))
+        return false;
+
+    Materials.erase(Materials.begin() + materialID);
+
+    const int fallbackID = Materials.empty() ? KH_MATERIAL_UNDEFINED_SLOT : 0;
+
+    for (auto& sceneObject : Objects)
+    {
+        for (auto& mesh : sceneObject->GetMeshes())
+        {
+            int MeshMaterialSlotID = mesh.GetMaterialSlotID();
+            if (MeshMaterialSlotID == materialID)
+            {
+                mesh.SetMaterialSlotID(materialID);
+            }
+            else if (MeshMaterialSlotID > materialID)
+            {
+                mesh.SetMaterialSlotID(MeshMaterialSlotID - 1);
+            }
+	        
+        }
+    }
+
+    return true;
+}
+
+bool KH_SceneBase::RemoveObjectAt(size_t Index)
+{
+    if (Index >= Objects.size())
+        return false;
+
+    Objects.erase(Objects.begin() + static_cast<std::ptrdiff_t>(Index));
+    return true;
 }
 
 void KH_SceneBase::Clear()
@@ -121,22 +183,18 @@ KH_PickResult KH_SceneBase::Pick(const KH_Ray& ray) const
     for (int i = 0; i < static_cast<int>(Objects.size()); ++i)
     {
         const KH_SceneObject& sceneObject = Objects[i];
-        if (!sceneObject.Object)
+        if (!sceneObject)
             continue;
 
-        if (!sceneObject.Object->GetAABB().Hit(ray).bIsHit)
+        if (!sceneObject->GetAABB().Hit(ray).bIsHit)
             continue;
 
-        KH_HitResult hit = sceneObject.Object->Pick(ray);
+        KH_PickResult pick = sceneObject->Pick(ray);
 
-        if (hit.bIsHit && hit.Distance < best.Distance)
+        if (pick.bIsHit && pick.Distance < best.Distance)
         {
-            best.bIsHit = true;
-            best.ObjectIndex = i;
-            best.MaterialSlotID = sceneObject.MaterialSlotID;
-            best.Distance = hit.Distance;
-            best.HitPoint = hit.HitPoint;
-            best.Normal = hit.Normal;
+            best = pick;
+            best.ObjectIndex = i;   // 修这里，不是 ObjectMeshID
         }
     }
 
@@ -182,7 +240,7 @@ void KH_GpuLBVHScene::UpdateAABB()
     AABB.Reset();
     for (auto& Object :Objects)
     {
-        AABB.Merge(Object.Object->GetAABB());
+        AABB.Merge(Object->GetAABB());
     }
 }
 
@@ -193,10 +251,20 @@ void KH_GpuLBVHScene::BindAndBuild()
     BVH.BindAndBuild(this);
 }
 
+void KH_GpuLBVHScene::UpdateMaterialSSBO()
+{
+    std::vector<KH_BRDFMaterialEncoded> BSDFMaterialEncodeds = EncodeBRDFMaterials();
+    Material_SSBO.SetData(BSDFMaterialEncodeds);
+}
+
+void KH_GpuLBVHScene::UpdatePrimitiveSSBO()
+{
+    std::vector<KH_PrimitiveEncoded> PrimitiveEncodeds = EncodePrimitives();
+    Primitive_SSBO.SetData(PrimitiveEncodeds);
+}
+
 void KH_GpuLBVHScene::Render()
 {
-    KH_Editor::Instance().Scene = this;
-
     SetRayTracingParam(KH_ExampleShaders::Instance().DisneyBRDF_0);
 
     KH_Editor::Instance().BindCanvasFramebuffer();
@@ -206,101 +274,5 @@ void KH_GpuLBVHScene::Render()
     glBindVertexArray(0);
 
     KH_Editor::Instance().UnbindCanvasFramebuffer();
-}
-
-
-void KH_GpuLBVHExampleScenes::InitSingleTriangle()
-{
-    KH_BRDFMaterial Material;
-    Material.BaseColor = glm::vec3(1.0, 0.0, 0.0);
-
-    SingleTriangle.Materials.push_back(Material);
-
-    KH_Triangle Triangle(
-        glm::vec3(-0.5, -0.5, 0.0),
-        glm::vec3(0.5, -0.5, 0.0),
-        glm::vec3(0.0, 0.5, 0.0)
-    );
-
-    SingleTriangle.AddTriangle(0, Triangle);
-    SingleTriangle.BindAndBuild();
-}
-
-void KH_GpuLBVHExampleScenes::InitBunny()
-{
-    KH_BRDFMaterial Material1;
-    Material1.BaseColor = glm::vec3(1.0, 0.0, 0.0);
-
-    KH_BRDFMaterial Material2;
-    Material2.BaseColor = glm::vec3(0.0, 1.0, 0.0);
-
-    KH_BRDFMaterial Material3;
-    Material3.Emissive = glm::vec3(5.0, 5.0, 5.0);
-    Material3.BaseColor = glm::vec3(1.0, 1.0, 1.0);
-
-    glm::vec3 v0(-1.0f, 0.0f, -1.0f);
-    glm::vec3 v1(1.0f, 0.0f, -1.0f);
-    glm::vec3 v2(1.0f, 0.0f, 1.0f);
-    glm::vec3 v3(-1.0f, 0.0f, 1.0f);
-
-    KH_Triangle Triangle1(v0, v1, v2);
-    KH_Triangle Triangle2(v0, v2, v3);
-
-    Bunny.Materials.push_back(Material1);
-    Bunny.Materials.push_back(Material2);
-    Bunny.Materials.push_back(Material3);
-
-    KH_Model& Model = Bunny.AddModel(0, "Assert/Models/bunny.obj");
-    Model.SetUniformScale(4.0f);
-    Model.SetPosition(0.0f, -0.1f, 0.0f);
-
-    Bunny.AddTriangle(1, Triangle1);
-    Bunny.AddTriangle(1, Triangle2);
-
-    KH_Triangle& t1 = Bunny.AddTriangle(2, Triangle1);
-    KH_Triangle& t2 = Bunny.AddTriangle(2, Triangle2);
-    t1.SetUniformScale(0.4f);
-    t2.SetUniformScale(0.4f);
-    t1.SetPosition(0.0f, 0.8f, 0.0);
-    t2.SetPosition(0.0f, 0.8f, 0.0);
-
-    Bunny.BindAndBuild();
-}
-
-void KH_GpuLBVHExampleScenes::InitDebugBox()
-{
-    glm::vec3 Colors[6] = {
-        glm::vec3(1, 0, 0),
-        glm::vec3(0, 1, 0),
-        glm::vec3(0, 0, 1),
-        glm::vec3(1, 1, 0),
-        glm::vec3(1, 0, 1),
-        glm::vec3(0, 1, 1)
-    };
-
-    for (int i = 0; i < 6; ++i) {
-        KH_BRDFMaterial Mat;
-        Mat.BaseColor = glm::vec4(Colors[i], 1.0f);
-        DebugBox.Materials.push_back(Mat);
-    }
-
-    glm::vec3 v[8] = {
-        {-0.5f, -0.5f,  0.5f}, {0.5f, -0.5f,  0.5f}, {0.5f,  0.5f,  0.5f}, {-0.5f,  0.5f,  0.5f}, // Front 0,1,2,3
-        {-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f,  0.5f, -0.5f}, {-0.5f,  0.5f, -0.5f}  // Back  4,5,6,7
-    };
-
-    auto AddQuad = [&](int a, int b, int c, int d, int matID) {
-        KH_Triangle& t1 = DebugBox.AddTriangle(matID, KH_Triangle(v[a], v[b], v[c]));
-        //KH_Triangle& t2 = DebugBox.AddTriangle(matID, KH_Triangle(v[a], v[c], v[d]));
-        };
-
-    AddQuad(0, 1, 2, 3, 0); // Front
-    AddQuad(5, 4, 7, 6, 1); // Back
-    AddQuad(4, 0, 3, 7, 2); // Left
-    AddQuad(1, 5, 6, 2, 3); // Right
-    AddQuad(3, 2, 6, 7, 4); // Top
-    AddQuad(4, 5, 1, 0, 5); // Bottom
-
-    DebugBox.BindAndBuild();
 }
 

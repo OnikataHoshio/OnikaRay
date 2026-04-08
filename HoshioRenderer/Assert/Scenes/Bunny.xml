@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Scene version="3">
+    <Materials>
+        <Material id="0" baseColor="0.800000012 0.800000012 0.800000012" emissive="2.57599998 2.34800005 2.01900005" subsurface="1" metallic="0.44999999" specular="1" specularTint="1" roughness="1" anisotropic="0" sheen="0" sheenTint="0" clearcoat="0" clearcoatGloss="0" ior="1" transmission="0"/>
+        <Material id="1" baseColor="1 0 0" emissive="0 0 0" subsurface="0" metallic="0" specular="1" specularTint="0" roughness="0.5" anisotropic="0" sheen="0.79000002" sheenTint="1" clearcoat="0.34999999" clearcoatGloss="1" ior="1.5" transmission="0"/>
+        <Material id="2" baseColor="0.139329493 0.767932475 0.139329493" emissive="0 0 0" subsurface="0" metallic="0" specular="0.5" specularTint="0" roughness="0.5" anisotropic="0" sheen="0" sheenTint="0" clearcoat="0" clearcoatGloss="0" ior="1.5" transmission="0"/>
+    </Materials>
+    <Objects>
+        <Model sourceType="Asset" path="D:\Dev\GraphicsXMU\Projects\Hoshio\HoshioRenderer\HoshioRenderer\Assert\Models\bunny.obj">
+            <MeshMaterialSlots>
+                <MeshMaterialSlot meshID="0" material="1"/>
+            </MeshMaterialSlots>
+            <Transform position="0.0302414559 -0.0556683242 0.00266807713" rotation="0 -0 0" scale="2.79999995 2.79999995 2.79999995"/>
+        </Model>
+        <Model sourceType="Builtin" builtinType="Plane" size="1">
+            <MeshMaterialSlots>
+                <MeshMaterialSlot meshID="0" material="2"/>
+            </MeshMaterialSlots>
+            <Transform position="0 0 0" rotation="0 0 0" scale="1 1 1"/>
+        </Model>
+        <Model sourceType="Builtin" builtinType="Plane" size="1">
+            <MeshMaterialSlots>
+                <MeshMaterialSlot meshID="0" material="0"/>
+            </MeshMaterialSlots>
+            <Transform position="0 0.590283036 0" rotation="0 -0 0" scale="0.449999988 0.449999988 0.449999988"/>
+        </Model>
+    </Objects>
+</Scene>

@@ -27,8 +27,13 @@ private:
 
     void InitSingleGammaCorrectionGraph();
 
+    void InitDrawSobelGraph();
+
 public:
     KH_PostProcessGraph SingleGammaCorrectionGraph;
+
+    KH_PostProcessGraph DrawSobelGraph;
+
 
 };
 

@@ -70,34 +70,29 @@ void KH_Insepctor::Render()
 
     KH_Editor& Editor = KH_Editor::Instance();
 
-    if (!Editor.Scene)
+    int32_t selected = Editor.GetSelectedObjectID();
+    auto& objects = Editor.Scene.GetObjects();
+
+    if (selected < 0 || selected >= static_cast<int32_t>(objects.size()))
     {
-        ImGui::TextDisabled("No scene");
+        ImGui::Indent(20.0f);
+        ImGui::TextDisabled("No selection");
+        ImGui::Unindent(20.0f);
     }
     else
     {
-        int32_t selected = Editor.GetSelectedObjectIndex();
-        auto& objects = Editor.Scene->GetObjects();
-
-        if (selected < 0 || selected >= static_cast<int32_t>(objects.size()))
+        KH_Object* Object = objects[selected].get();
+        if (Object)
         {
-            ImGui::Indent(20.0f);
-            ImGui::TextDisabled("No selection");
-            ImGui::Unindent(20.0f);
-        }
-        else
-        {
-            KH_Object* Object = objects[selected].Object.get();
-            if (Object)
+            KH_InspectorEditResult EditResult = Object->DrawInspector();
+            if (EditResult.CommitType == KH_InspectorCommitType::RebuildBVH)
             {
-                KH_InspectorEditResult EditResult = Object->DrawInspector();
-                if (EditResult.CommitType == KH_InspectorCommitType::RebuildBVH)
-                {
-                    Editor.RequestSceneRebuild();
-                }
+                Editor.RequestSceneRebuild();
             }
         }
     }
+
+
 
     bIsFocused = ImGui::IsWindowFocused();
     bIsHovered = ImGui::IsWindowHovered();
@@ -162,4 +157,103 @@ void KH_GlobalInfo::Render()
     ImGui::End();
     ImGui::PopStyleVar();
 }
+
+void KH_SceneTree::Render()
+{
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::Begin("SceneTree");
+
+    KH_Editor& Editor = KH_Editor::Instance();
+    auto& objects = Editor.Scene.GetObjects();
+
+    const int selectedModelID = Editor.GetSelectedObjectID();
+    const int selectedMeshID = Editor.GetSelectedObjectMeshID();
+
+    ImGui::Indent(10.0f);
+    ImGui::Text("Models: %d", static_cast<int>(objects.size()));
+    ImGui::SameLine();
+    ImGui::TextDisabled("| Materials: %d", static_cast<int>(Editor.Scene.Materials.size()));
+    ImGui::Unindent(10.0f);
+
+    ImGui::Separator();
+
+    if (objects.empty())
+    {
+        ImGui::Indent(20.0f);
+        ImGui::TextDisabled("Empty scene");
+        ImGui::Unindent(20.0f);
+    }
+    else
+    {
+        for (int modelID = 0; modelID < static_cast<int>(objects.size()); ++modelID)
+        {
+            KH_Model* model = dynamic_cast<KH_Model*>(objects[modelID].get());
+            if (!model)
+                continue;
+
+            const auto& meshes = model->GetMeshes();
+            const bool isModelSelected = (selectedModelID == modelID && selectedMeshID == 0);
+            const bool isThisModelActive = (selectedModelID == modelID);
+
+            // 当前选中的 Model 始终展开
+            ImGui::SetNextItemOpen(isThisModelActive, ImGuiCond_Always);
+
+            ImGuiTreeNodeFlags flags =
+                ImGuiTreeNodeFlags_OpenOnArrow |
+                ImGuiTreeNodeFlags_SpanAvailWidth;
+
+            if (isModelSelected)
+                flags |= ImGuiTreeNodeFlags_Selected;
+
+            char modelLabel[128];
+            std::snprintf(
+                modelLabel,
+                sizeof(modelLabel),
+                "Model [%d]  (%d Meshes)",
+                modelID,
+                static_cast<int>(meshes.size())
+            );
+
+            bool open = ImGui::TreeNodeEx((void*)(intptr_t)modelID, flags, "%s", modelLabel);
+
+            // 点击 Model：选中该 Model，并把 MeshID 设为 0
+            if (ImGui::IsItemClicked())
+            {
+                Editor.SetSelectedObjectID(modelID, 0);
+            }
+
+            if (open)
+            {
+                ImGui::Indent(20.0f);
+                for (int meshID = 0; meshID < static_cast<int>(meshes.size()); ++meshID)
+                {
+                    const bool isMeshSelected =
+                        (selectedModelID == modelID && selectedMeshID == meshID);
+
+                    char meshLabel[128];
+                    std::snprintf(
+                        meshLabel,
+                        sizeof(meshLabel),
+                        "Mesh [%d]",
+                        meshID
+                    );
+
+                    if (ImGui::Selectable(meshLabel, isMeshSelected))
+                    {
+                        Editor.SetSelectedObjectID(modelID, meshID);
+                    }
+                }
+                ImGui::Unindent(20.0f);
+                ImGui::TreePop();
+            }
+        }
+    }
+
+    bIsFocused = ImGui::IsWindowFocused();
+    bIsHovered = ImGui::IsWindowHovered();
+
+    ImGui::End();
+    ImGui::PopStyleVar();
+}
+
 

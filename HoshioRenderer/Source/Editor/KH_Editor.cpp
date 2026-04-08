@@ -1,13 +1,24 @@
 #include "KH_Editor.h"
 #include "Hit/KH_Ray.h"
-
 #include "Scene/KH_Scene.h"
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+#include "pfd/portable-file-dialogs.h"
+
 
 uint32_t KH_Editor::EditorWidth = 1920;
 uint32_t KH_Editor::EditorHeight = 1080;
 uint32_t KH_Editor::CanvasWidth = 800;
 uint32_t KH_Editor::CanvasHeight = 800;
 std::string KH_Editor::Title = "KH_Renderer";
+std::string KH_Editor::DefaultScenePath = "";
 
 namespace
 {
@@ -57,6 +68,21 @@ namespace
     }
 }
 
+namespace
+{
+    std::string EnsureXmlExtension(std::string path)
+    {
+        if (path.empty())
+            return path;
+
+        std::filesystem::path p(path);
+        if (!p.has_extension())
+            p.replace_extension(".xml");
+
+        return p.string();
+    }
+}
+
 KH_Editor& KH_Editor::Instance()
 {
     static KH_Editor instance;
@@ -71,6 +97,12 @@ uint32_t KH_Editor::GetFrameCounter() const
 void KH_Editor::RequestSceneRebuild()
 {
     bSceneRebuildRequested = true;
+    RequestFrameReset();
+}
+
+void KH_Editor::RequestFrameReset()
+{
+    bFrameResetRequested = true;
 }
 
 KH_Canvas& KH_Editor::GetCanvas()
@@ -101,6 +133,17 @@ void KH_Editor::SetCanvasHeight(uint32_t Height)
 void KH_Editor::SetTitle(std::string Title)
 {
     KH_Editor::Title = Title;
+}
+
+void KH_Editor::SetDefaultScenePath(std::string ScenePath)
+{
+    KH_Editor::DefaultScenePath = ScenePath;
+}
+
+const std::string& KH_Editor::GetDefaultScenePath()
+{
+    return DefaultScenePath;
+    return DefaultScenePath;
 }
 
 uint32_t KH_Editor::GetEditorWidth()
@@ -136,18 +179,27 @@ GLFWwindow* KH_Editor::GLFWwindow() const
 void KH_Editor::BeginRender()
 {
     bSceneRebuildRequested = false;
+    bFrameResetRequested = false;
     Window.BeginRender();
     BeginImgui();
     RenderDockSpace();
 }
 
+void KH_Editor::Render()
+{
+    Scene.Render();
+}
+
 void KH_Editor::EndRender()
 {
     Canvas.Render();
-    UpdateSelectedObjectIndex();
+    DrawCanvasContextMenu();
+    UpdateSelectedObjectID();
 
     Console.Render();
+    SceneTree.Render();
     Inspector.Render();
+    MaterialsEditor.Render();
     GlobalInfo.Render();
     Canvas.SwapFramebuffer();
     EndImgui();
@@ -157,11 +209,10 @@ void KH_Editor::EndRender()
 
     if (bSceneRebuildRequested)
     {
-        Scene->BindAndBuild();
-        ResetFrameCounter();
+        Scene.BindAndBuild();
     }
 
-    if (bViewManipulatorUsing)
+    if (bFrameResetRequested)
     {
         ResetFrameCounter();
     }
@@ -176,7 +227,7 @@ void KH_Editor::UpdateCanvasExtent(uint32_t Width, uint32_t Height)
     Camera.Height = Height;
     Camera.UpdateAspect();
 
-    ResetFrameCounter();
+    RequestFrameReset();
 }
 
 void KH_Editor::BindCanvasFramebuffer()
@@ -194,9 +245,14 @@ const KH_Framebuffer& KH_Editor::GetLastFramebuffer()
     return Canvas.GetLastFramebuffer();
 }
 
-int32_t KH_Editor::GetSelectedObjectIndex() const
+int KH_Editor::GetSelectedObjectID() const
 {
-    return SelectedObjectIndex;
+    return SelectedObjectID;
+}
+
+int KH_Editor::GetSelectedObjectMeshID() const
+{
+    return SelectedObjectMeshID;
 }
 
 void KH_Editor::ResetFrameCounter()
@@ -218,6 +274,7 @@ KH_Editor::~KH_Editor()
 
 void KH_Editor::Initialize()
 {
+    ImportSceneFromFile(DefaultScenePath);
 }
 
 void KH_Editor::DeInitialize()
@@ -242,6 +299,8 @@ void KH_Editor::RenderDockSpace()
     ImGui::Begin("RootDockSpace", nullptr, window_flags);
     ImGui::PopStyleVar(3);
 
+    DrawMainMenuBar();
+
     ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
     ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
 
@@ -262,27 +321,22 @@ void KH_Editor::EndImgui()
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-void KH_Editor::UpdateSelectedObjectIndex()
+void KH_Editor::UpdateSelectedObjectID()
 {
-    if (!Scene)
-        return;
-
     if (ImGuizmo::IsUsingAny() || ImGuizmo::IsViewManipulateHovered())
         return;
 
     KH_Ray pickRay;
     if (Canvas.TryBuildPickRay(Camera, pickRay, 0))
     {
-        KH_PickResult result = Scene->Pick(pickRay);
-        SelectedObjectIndex = result.bIsHit ? result.ObjectIndex : -1;
+        KH_PickResult result = Scene.Pick(pickRay);
+        SelectedObjectID = result.bIsHit ? result.ObjectIndex : -1;
+        SelectedObjectMeshID = result.ObjectMeshID;
     }
 }
 
 void KH_Editor::DrawCanvasGizmos()
 {
-    if (!Scene)
-        return;
-
     if (!Canvas.IsHovered() && !Canvas.IsFocused())
         return;
 
@@ -299,22 +353,226 @@ void KH_Editor::DrawCanvasGizmos()
     DrawObjectGizmo();
 }
 
+void KH_Editor::SetSelectedObjectID(int ObjectID, int MeshID)
+{
+    SelectedObjectID = ObjectID;
+    SelectedObjectMeshID = MeshID;
+}
+
+bool KH_Editor::DeleteSelectedObject(bool OnlyDeleteModel)
+{
+    auto& objects = Scene.GetObjects();
+    if (SelectedObjectID < 0 || SelectedObjectID >= static_cast<int32_t>(objects.size()))
+        return false;
+
+    KH_Object* object = objects[SelectedObjectID].get();
+    if (!object)
+        return false;
+
+    if (OnlyDeleteModel && dynamic_cast<KH_Model*>(object) == nullptr)
+        return false;
+
+    if (!Scene.RemoveObjectAt(static_cast<size_t>(SelectedObjectID)))
+        return false;
+
+    SelectedObjectID = -1;
+    RequestSceneRebuild();
+    RequestFrameReset();
+    return true;
+}
+
+bool KH_Editor::AddExternalModelFromFile(const std::string& filePath, int materialSlotID)
+{
+    if (filePath.empty())
+        return false;
+
+    const int slot = EnsureUsableMaterialSlot(materialSlotID);
+
+    KH_Model& model = Scene.AddModel(slot, filePath);
+    InitializeSpawnedObjectTransform(model);
+
+    SelectedObjectID = static_cast<int32_t>(Scene.GetObjects().size()) - 1;
+    RequestSceneRebuild();
+    RequestFrameReset();
+
+    return true;
+}
+
+bool KH_Editor::AddBuiltinModel(int builtinTypeIndex, float size, int materialSlotID)
+{
+    const int slot = EnsureUsableMaterialSlot(materialSlotID);
+
+    KH_Model model;
+    switch (builtinTypeIndex)
+    {
+    case 0:
+        model = KH_PrimitiveFactory::CreatePlane(size);
+        break;
+    case 1:
+        model = KH_PrimitiveFactory::CreateCube(size);
+        break;
+    case 2:
+        model = KH_PrimitiveFactory::CreateEmptyCube(size);
+        break;
+    case 3:
+        model = KH_PrimitiveFactory::CreateFullscreenQuad(size);
+        break;
+    default:
+        return false;
+    }
+
+    KH_Model& modelRef = Scene.AddModel(slot, std::move(model));
+    InitializeSpawnedObjectTransform(modelRef);
+
+    SelectedObjectID = static_cast<int32_t>(Scene.GetObjects().size()) - 1;
+    RequestSceneRebuild();
+    RequestFrameReset();
+
+    return true;
+}
+
+
 glm::vec3 KH_Editor::GetViewManipulatorPivot() const
 {
-    if (!Scene)
-        return glm::vec3(0.0f);
+    glm::vec3 pivot = Scene.AABB.GetCenter();
 
-    glm::vec3 pivot = Scene->AABB.GetCenter();
-
-    const auto& objects = Scene->GetObjects();
-    if (SelectedObjectIndex >= 0 &&
-        SelectedObjectIndex < static_cast<int32_t>(objects.size()) &&
-        objects[SelectedObjectIndex].Object)
+    const auto& objects = Scene.GetObjects();
+    if (SelectedObjectID >= 0 &&
+        SelectedObjectID < static_cast<int32_t>(objects.size()) &&
+        objects[SelectedObjectID])
     {
-        pivot = objects[SelectedObjectIndex].Object->GetAABB().GetCenter();
+        pivot = objects[SelectedObjectID]->GetAABB().GetCenter();
     }
 
     return pivot;
+}
+
+void KH_Editor::DrawMainMenuBar()
+{
+    if (!ImGui::BeginMenuBar())
+        return;
+
+    if (ImGui::BeginMenu("File"))
+    {
+        const bool hasCurrentPath = !CurrentSceneXmlPath.empty();
+
+        if (ImGui::MenuItem("New Scene", "Ctrl+N"))
+        {
+            NewScene();
+        }
+
+        ImGui::Separator();
+
+        if (ImGui::BeginMenu("Add"))
+        {
+            if (ImGui::MenuItem("Import External Model..."))
+            {
+                OpenImportModelDialog();
+            }
+
+            if (ImGui::BeginMenu("Builtin Model"))
+            {
+                if (ImGui::MenuItem("Plane"))
+                    AddBuiltinModel(0, 1.0f, 0);
+
+                if (ImGui::MenuItem("Cube"))
+                    AddBuiltinModel(1, 1.0f, 0);
+
+                if (ImGui::MenuItem("EmptyCube"))
+                    AddBuiltinModel(2, 1.0f, 0);
+
+                if (ImGui::MenuItem("FullscreenQuad"))
+                    AddBuiltinModel(3, 1.0f, 0);
+
+                ImGui::EndMenu();
+            }
+
+            ImGui::EndMenu();
+        }
+
+        ImGui::Separator();
+
+        if (ImGui::MenuItem("Import Scene...", "Ctrl+X"))
+        {
+            OpenImportSceneDialog();
+        }
+
+        ImGui::Separator();
+
+        if (ImGui::MenuItem("Save", "Ctrl+S", false, hasCurrentPath))
+        {
+            SaveScene();
+        }
+
+        if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S", false, true))
+        {
+            SaveSceneAs();
+        }
+
+        ImGui::Separator();
+
+        ImGui::TextDisabled(
+            hasCurrentPath ? CurrentSceneXmlPath.c_str() : "No current scene file"
+        );
+
+        ImGui::EndMenu();
+    }
+
+    ImGui::EndMenuBar();
+
+    if (ImGui::IsKeyDown(ImGuiMod_Ctrl) && ImGui::IsKeyPressed(ImGuiKey_X))
+    {
+        OpenImportSceneDialog();
+    }
+
+    const ImGuiIO& io = ImGui::GetIO();
+    const bool ctrl = io.KeyCtrl;
+    const bool shift = io.KeyShift;
+
+    if (ctrl && !shift && ImGui::IsKeyPressed(ImGuiKey_S, false))
+    {
+        SaveScene();
+    }
+
+    if (ctrl && shift && ImGui::IsKeyPressed(ImGuiKey_S, false))
+    {
+        SaveSceneAs();
+    }
+
+    if (ctrl &&  ImGui::IsKeyPressed(ImGuiKey_N, false))
+    {
+        NewScene();
+    }
+}
+
+void KH_Editor::OpenImportSceneDialog()
+{
+    std::vector<std::string> files = pfd::open_file(
+        "Import Scene",
+        ".",
+        { "Scene XML Files", "*.xml", "All Files", "*" }
+    ).result();
+
+    if (files.empty())
+        return;
+
+    ImportSceneFromFile(files[0]);
+}
+
+bool KH_Editor::ImportSceneFromFile(const std::string& filePath)
+{
+    if (!Scene.LoadFromXml(filePath))
+    {
+        return false;
+    }
+
+    Scene.BindAndBuild();
+
+    CurrentSceneXmlPath = filePath;
+    SelectedObjectID = -1;
+    RequestFrameReset();
+
+    return true;
 }
 
 void KH_Editor::DrawViewManipulator()
@@ -351,7 +609,12 @@ void KH_Editor::DrawViewManipulator()
     if (viewChanged)
     {
         ApplyViewManipulatorToCamera(view, pivot, distance);
-        ResetFrameCounter();
+        RequestFrameReset();
+    }
+
+    if (bViewManipulatorUsing)
+    {
+        RequestFrameReset();
     }
 }
 
@@ -379,11 +642,11 @@ void KH_Editor::DrawObjectGizmo()
     bGizmoOver = false;
     bGizmoUsing = false;
 
-    const auto& objects = Scene->GetObjects();
-    if (SelectedObjectIndex < 0 || SelectedObjectIndex >= static_cast<int32_t>(objects.size()))
+    const auto& objects = Scene.GetObjects();
+    if (SelectedObjectID < 0 || SelectedObjectID >= static_cast<int32_t>(objects.size()))
         return;
 
-    KH_Object* object = objects[SelectedObjectIndex].Object.get();
+    KH_Object* object = objects[SelectedObjectID].get();
     if (!object)
         return;
 
@@ -392,7 +655,7 @@ void KH_Editor::DrawObjectGizmo()
     if (ImGui::IsKeyPressed(ImGuiKey_Y)) GizmoOperation = KH_GizmoOperation::Scale;
     if (ImGui::IsKeyPressed(ImGuiKey_L)) GizmoMode = KH_GizmoMode::Local;
     if (ImGui::IsKeyPressed(ImGuiKey_W)) GizmoMode = KH_GizmoMode::World;
-    if (ImGui::IsKeyPressed(ImGuiKey_S)) bUseGizmoSnap = !bUseGizmoSnap;
+    if (ImGui::IsKeyPressed(ImGuiKey_S) && ImGui::IsKeyPressed(ImGuiKey_LeftShift)) bUseGizmoSnap = !bUseGizmoSnap;
 
     glm::mat4 view = Camera.GetViewMatrix();
     glm::mat4 proj = Camera.GetProjMatrix();
@@ -446,7 +709,145 @@ void KH_Editor::DrawObjectGizmo()
         {
             object->SetTransform(position, rotationQuat, scale);
             RequestSceneRebuild();
-            ResetFrameCounter();
+            RequestFrameReset();
         }
+    }
+}
+
+bool KH_Editor::SaveSceneToFile(const std::string& filePath)
+{
+
+    std::string finalPath = EnsureXmlExtension(filePath);
+    if (finalPath.empty())
+        return false;
+
+    if (!Scene.SaveToXml(finalPath))
+        return false;
+
+    CurrentSceneXmlPath = finalPath;
+    return true;
+}
+
+bool KH_Editor::SaveSceneAs()
+{
+
+    std::string defaultPath = CurrentSceneXmlPath.empty() ? "." : CurrentSceneXmlPath;
+
+    std::string path = pfd::save_file(
+        "Save Scene As",
+        defaultPath,
+        { "Scene XML Files", "*.xml", "All Files", "*" }
+    ).result();
+
+    if (path.empty())
+        return false;
+
+    return SaveSceneToFile(path);
+}
+
+bool KH_Editor::SaveScene()
+{
+
+    if (!CurrentSceneXmlPath.empty())
+        return SaveSceneToFile(CurrentSceneXmlPath);
+
+    return SaveSceneAs();
+}
+
+void KH_Editor::NewScene()
+{
+    Scene.Clear();
+    Scene.Materials.clear();
+
+    KH_BRDFMaterial defaultMat;
+    defaultMat.BaseColor = glm::vec3(0.8f);
+    Scene.Materials.push_back(defaultMat);
+
+    Scene.BindAndBuild();
+
+    CurrentSceneXmlPath.clear();
+    SelectedObjectID = -1;
+    RequestFrameReset();
+}
+
+int KH_Editor::EnsureUsableMaterialSlot(int requestedSlot)
+{
+    if (Scene.Materials.empty())
+    {
+        KH_BRDFMaterial defaultMat;
+        defaultMat.BaseColor = glm::vec3(0.8f);
+        Scene.Materials.push_back(defaultMat);
+    }
+
+    if (requestedSlot < 0)
+        return 0;
+
+    if (requestedSlot >= static_cast<int>(Scene.Materials.size()))
+        return static_cast<int>(Scene.Materials.size()) - 1;
+
+    return requestedSlot;
+}
+
+void KH_Editor::InitializeSpawnedObjectTransform(KH_Object& object)
+{
+    //const glm::vec3 spawnPos = Camera.Position + Camera.Front * 3.0f;
+    //object.SetPosition(spawnPos);
+    object.SetPosition(glm::vec3(0.0f));
+}
+
+void KH_Editor::OpenImportModelDialog()
+{
+    std::vector<std::string> files = pfd::open_file(
+        "Import Model",
+        ".",
+        {
+            "Model Files", "*.obj *.fbx *.gltf *.glb *.dae *.3ds",
+            "All Files", "*"
+        }
+    ).result();
+
+    if (files.empty())
+        return;
+
+    AddExternalModelFromFile(files[0], 0);
+}
+
+void KH_Editor::DrawCanvasContextMenu()
+{
+    if (Canvas.IsHovered() && ImGui::GetIO().KeyCtrl && ImGui::GetIO().KeyShift && ImGui::IsKeyPressed(ImGuiKey_A))
+    {
+        ImGui::OpenPopup("CanvasContextMenu");
+    }
+
+    if (ImGui::BeginPopup("CanvasContextMenu"))
+    {
+        if (ImGui::MenuItem("Import External Model..."))
+        {
+            OpenImportModelDialog();
+        }
+
+        if (ImGui::BeginMenu("Add Builtin Model"))
+        {
+            if (ImGui::MenuItem("Plane"))
+                AddBuiltinModel(0, 1.0f, 0);
+
+            if (ImGui::MenuItem("Cube"))
+                AddBuiltinModel(1, 1.0f, 0);
+
+            if (ImGui::MenuItem("EmptyCube"))
+                AddBuiltinModel(2, 1.0f, 0);
+
+            if (ImGui::MenuItem("FullscreenQuad"))
+                AddBuiltinModel(3, 1.0f, 0);
+
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::MenuItem("Delete Selected Model"))
+        {
+            DeleteSelectedObject(true);
+        }
+
+        ImGui::EndPopup();
     }
 }

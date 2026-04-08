@@ -3,8 +3,12 @@
 #include "Pipeline/KH_Buffer.h"
 
 class KH_Shader;
-struct KH_SceneObject;
-struct KH_ScenePrimitive;
+
+class KH_Model;
+class KH_Primitive;
+
+using KH_SceneObject = std::unique_ptr<KH_Model>;
+using KH_ScenePrimitive = std::unique_ptr<KH_Primitive>;
 
 enum class KH_BVH_SPLIT_MODE
 {

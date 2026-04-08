@@ -62,7 +62,7 @@ uniform uint uFrameCounter;
 uniform uvec2 uResolution; 
 
 
-const vec3 SkyColor = vec3(0, 0, 0);
+const vec3 SkyColor = vec3(0.05, 0.05, 0.05);
 
 struct Ray
 {
@@ -384,7 +384,7 @@ vec3 mon2lin(vec3 x)
 
 vec3 BRDF( vec3 L, vec3 V, vec3 N,  int MaterialSlotID)
 {
-    BRDFMaterial Material = DecodeBRDFMaterial(MaterialSlotID);
+    BRDFMaterial Mat = DecodeBRDFMaterial(MaterialSlotID);
 
     float NdotL = dot(N,L);
     float NdotV = dot(N,V);
@@ -394,23 +394,46 @@ vec3 BRDF( vec3 L, vec3 V, vec3 N,  int MaterialSlotID)
     float NdotH = dot(N,H);
     float LdotH = dot(L,H);
     
-    vec3 Cdlin = Material.BaseColor;
+    vec3 Cdlin = Mat.BaseColor;
     float Cdlum = .3*Cdlin[0] + .6*Cdlin[1]  + .1*Cdlin[2]; // luminance approx.
     
+    vec3 Ctint = Cdlum > 0 ? Cdlin/Cdlum : vec3(1); // normalize lum. to isolate hue+sat
+    vec3 Cspec0 = mix(Mat.Specular*.08*mix(vec3(1), Ctint, Mat.SpecularTint), Cdlin, Mat.Metallic);
+    vec3 Csheen = mix(vec3(1), Ctint, Mat.SheenTint);
 
+    // Diffuse fresnel - go from 1 at normal incidence to .5 at grazing
+    // and mix in diffuse retro-reflection based on roughness
     float FL = SchlickFresnel(NdotL), FV = SchlickFresnel(NdotV);
-    float Fd90 = 0.5 + 2 * LdotH*LdotH * Material.Roughness;
+    float Fd90 = 0.5 + 2 * LdotH*LdotH * Mat.Roughness;
     float Fd = mix(1.0, Fd90, FL) * mix(1.0, Fd90, FV);
 
-
-    float Fss90 = LdotH*LdotH*Material.Roughness;
+    // Based on Hanrahan-Krueger brdf approximation of isotropic bssrdf
+    // 1.25 scale is used to (roughly) preserve albedo
+    // Fss90 used to "flatten" retroreflection based on roughness
+    float Fss90 = LdotH*LdotH*Mat.Roughness;
     float Fss = mix(1.0, Fss90, FL) * mix(1.0, Fss90, FV);
     float ss = 1.25 * (Fss * (1 / (NdotL + NdotV) - .5) + .5);
 
+    vec3 diffuse = (1.0/PI) * mix(Fd, ss, Mat.Subsurface) * Cdlin;
 
+    float alpha = Mat.Roughness * Mat.Roughness;
+    float Ds =  GTR2(NdotH, alpha);
+    float FH = SchlickFresnel(LdotH);
+    vec3 Fs = mix(Cspec0, vec3(1), FH);
+    float Gs = smithG_GGX(NdotL, Mat.Roughness) * smithG_GGX(NdotV, Mat.Roughness);
 
-    vec3 diffuse = Fd * Cdlin / PI;
-    return diffuse  * (1.0 - Material.Metallic);
+    vec3 specular = Gs * Fs * Ds;
+
+    // sheen
+    vec3 Fsheen = FH * Mat.Sheen * Csheen;
+    diffuse += Fsheen;
+
+    // clearcoat (ior = 1.5 -> F0 = 0.04)
+    float Dr = GTR1(NdotH, mix(.1,.001,Mat.ClearcoatGloss));
+    float Fr = mix(.04, 1.0, FH);
+    float Gr = smithG_GGX(NdotL, .25) * smithG_GGX(NdotV, .25);
+
+    return diffuse  * (1.0 - Mat.Metallic) + specular + .25 * Mat.Clearcoat * Gr * Fr * Ds;
 }
 
 vec3 PathTracing(Ray ray, int maxBounce)
@@ -471,7 +494,10 @@ void main()
 
     vec4 LastFrameColor = texture(uLastFrame, (CanvasPos.xy + 1.0)/2.0);
 
-    FragColor = mix(LastFrameColor, Color, 1.0/float(uFrameCounter+1));
+    if(uFrameCounter < 1024)
+        FragColor = mix(LastFrameColor, Color, 1.0/float(uFrameCounter+1));
+    else
+        FragColor = LastFrameColor;
 }
 
 

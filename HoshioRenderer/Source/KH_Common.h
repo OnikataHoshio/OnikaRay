@@ -20,7 +20,6 @@
 #include <sstream>
 #include <filesystem>
 #include <iomanip>
-
 #include "ranges"
 
 
@@ -51,8 +50,8 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
-
 #include <tinyxml2/tinyxml2.h>
+
 
 // ================= Macro ==================
 #define EPS 1e-6
